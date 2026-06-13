@@ -1,0 +1,85 @@
+﻿import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:expense_manager/app/theme/theme_provider.dart';
+import 'package:intl/intl.dart';
+import '../../../app/theme/app_colors.dart';
+import '../../../app/theme/app_spacing.dart';
+import '../../../core/utils/date_helpers.dart';
+import '../../expenses/data/expense_repository.dart';
+import '../../expenses/presentation/add_expense/add_expense_options_sheet.dart';
+import '../../auth/data/auth_repository.dart';
+import '../../../shared/widgets/animation_helpers.dart';
+import 'widgets/calendar_expense_card.dart';
+
+/// Provider for current month in calendar view.
+final calendarMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
+
+class DailySummary {
+  final double total;
+  final double userShare;
+  final int items;
+  const DailySummary({
+    required this.total,
+    required this.userShare,
+    required this.items,
+  });
+}
+
+final dailySummaryProvider = FutureProvider.family<DailySummary, DateTime>((
+  ref,
+  date,
+) async {
+  final expenses = await ref.watch(
+    monthlyExpensesProvider(DateTime(date.year, date.month, 1)).future,
+  );
+  final dayExpenses = expenses
+      .where((e) => DateHelpers.isSameDay(e.expenseDate, date))
+      .toList();
+
+  final currentUser = ref.watch(authStateProvider).valueOrNull;
+
+  double total = 0;
+  double userShare = 0;
+
+  for (final e in dayExpenses) {
+    total += e.amount;
+    if (e.isPersonal) {
+      if (currentUser != null && e.userId == currentUser.id) {
+        user
+                                        index: index,
+                                        child: CalendarExpenseCard(
+                                          expense: dayExpenses[index],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              );
+                            },
+                            loading: () => Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(32.0),
+                                child: CircularProgressIndicator(
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            error: (_, __) => const Center(
+                              child: Text('Error loading summary'),
+                            ),
+                          );
+                    },
+                    loading: () => Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(color: AppColors.textPrimary),
+                      ),
+                    ),
+                    error: (e, st) => Center(
+                      child: Text(
+                        'Error: $e',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
