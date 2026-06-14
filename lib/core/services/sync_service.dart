@@ -50,11 +50,17 @@ class SyncService {
 
         try {
           String targetTableId;
-          if (collectionName == 'expenses') targetTableId = AppConstants.expensesCollection;
-          else if (collectionName == 'groups') targetTableId = AppConstants.groupsCollection;
-          else if (collectionName == 'group_members') targetTableId = AppConstants.groupMembersCollection;
-          else if (collectionName == 'settlements') targetTableId = AppConstants.settlementsCollection;
-          else targetTableId = collectionName;
+          if (collectionName == 'expenses') {
+            targetTableId = AppConstants.expensesCollection;
+          } else if (collectionName == 'groups') {
+            targetTableId = AppConstants.groupsCollection;
+          } else if (collectionName == 'group_members') {
+            targetTableId = AppConstants.groupMembersCollection;
+          } else if (collectionName == 'settlements') {
+            targetTableId = AppConstants.settlementsCollection;
+          } else {
+            targetTableId = collectionName;
+          }
 
           if (action == 'create' && payloadStr != null) {
             final payload = jsonDecode(payloadStr) as Map<String, dynamic>;

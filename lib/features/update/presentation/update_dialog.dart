@@ -38,7 +38,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
     }
   }
 
-  void _startUpdate() {
+  Future<void> _startUpdate() async {
     // If not Android or apkUrl is null, fallback to browser
     if (!Platform.isAndroid || widget.updateInfo.apkUrl == null) {
       _launchBrowser();
