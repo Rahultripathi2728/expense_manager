@@ -55,7 +55,8 @@ class _UpdateDialogState extends State<UpdateDialog> {
       OtaUpdate()
           .execute(
         widget.updateInfo.apkUrl!,
-        destinationFilename: 'app-release.apk',
+        destinationFilename: 'expense_manager_update_${widget.updateInfo.latestVersion}.apk',
+        androidProviderAuthority: 'com.expensemanager.expense_manager.ota_update_provider',
       )
           .listen(
         (OtaEvent event) {
