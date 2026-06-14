@@ -64,7 +64,10 @@ class AuthRepository {
       }
     }
     final user = await _account.get();
-    return UserModel.fromAppwrite(user);
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
   }
 
   /// Sign up with email, password, and full name.
@@ -107,7 +110,10 @@ class AuthRepository {
       // Non-critical — user can verify later
     }
 
-    return UserModel.fromAppwrite(user);
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
   }
 
   /// Sign out.
@@ -157,7 +163,10 @@ class AuthRepository {
   /// Update user's name
   Future<UserModel> updateName(String newName) async {
     final user = await _account.updateName(name: newName);
-    return UserModel.fromAppwrite(user);
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
   }
 }
 
