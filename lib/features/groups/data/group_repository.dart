@@ -142,16 +142,26 @@ class GroupRepository {
       }
       return _fetchUserGroupsRemote(userId);
     } else {
-      // 1. Sync in background
-      _syncUserGroupsFromRemote(userId);
-
-      // 2. Fetch from local DB
+      // 1. Fetch from local DB
       final db = await _dbHelper.database;
-      final memberships = await db.query(
+      var memberships = await db.query(
         'group_members',
         where: 'userId = ?',
         whereArgs: [userId],
       );
+
+      if (memberships.isEmpty) {
+        // First time load or empty: wait for sync
+        await _syncUserGroupsFromRemote(userId);
+        memberships = await db.query(
+          'group_members',
+          where: 'userId = ?',
+          whereArgs: [userId],
+        );
+      } else {
+        // Already have local data: sync in background
+        _syncUserGroupsFromRemote(userId);
+      }
 
       if (memberships.isEmpty) return [];
 
@@ -235,16 +245,26 @@ class GroupRepository {
       }
       return _fetchGroupMembersRemote(groupId);
     } else {
-      // 1. Sync in background
-      _syncGroupMembersFromRemote(groupId);
-
-      // 2. Fetch from local DB
+      // 1. Fetch from local DB
       final db = await _dbHelper.database;
-      final memberships = await db.query(
+      var memberships = await db.query(
         'group_members',
         where: 'groupId = ?',
         whereArgs: [groupId],
       );
+
+      if (memberships.isEmpty) {
+        // Wait for sync if empty
+        await _syncGroupMembersFromRemote(groupId);
+        memberships = await db.query(
+          'group_members',
+          where: 'groupId = ?',
+          whereArgs: [groupId],
+        );
+      } else {
+        // Sync in background
+        _syncGroupMembersFromRemote(groupId);
+      }
 
       return memberships.map((m) {
         final data = Map<String, dynamic>.from(m);

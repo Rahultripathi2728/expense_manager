@@ -183,17 +183,28 @@ class ExpenseRepository {
       );
       return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
     } else {
-      // 1. Trigger background sync
-      _syncExpensesFromRemote(userId, month);
-
-      // 2. Return local data
+      // 1. Fetch from local DB
       final db = await _dbHelper.database;
-      final res = await db.query(
+      var res = await db.query(
         'expenses',
         where: 'userId = ? AND expenseDate >= ? AND expenseDate <= ?',
         whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
         orderBy: 'expenseDate DESC',
       );
+
+      if (res.isEmpty) {
+        // Wait for sync if empty
+        await _syncExpensesFromRemote(userId, month);
+        res = await db.query(
+          'expenses',
+          where: 'userId = ? AND expenseDate >= ? AND expenseDate <= ?',
+          whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
+          orderBy: 'expenseDate DESC',
+        );
+      } else {
+        // Sync in background
+        _syncExpensesFromRemote(userId, month);
+      }
 
       return res.map((map) {
         final m = Map<String, dynamic>.from(map);

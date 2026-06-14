@@ -111,17 +111,28 @@ class SettlementRepository {
       }
       return _fetchSettlementsRemote(groupId);
     } else {
-      // 1. Sync in background
-      _syncSettlementsFromRemote(groupId);
-
-      // 2. Fetch from local DB
+      // 1. Fetch from local DB
       final db = await _dbHelper.database;
-      final settlements = await db.query(
+      var settlements = await db.query(
         'settlements',
         where: 'groupId = ?',
         whereArgs: [groupId],
         orderBy: 'createdAt DESC',
       );
+
+      if (settlements.isEmpty) {
+        // Wait for sync if empty
+        await _syncSettlementsFromRemote(groupId);
+        settlements = await db.query(
+          'settlements',
+          where: 'groupId = ?',
+          whereArgs: [groupId],
+          orderBy: 'createdAt DESC',
+        );
+      } else {
+        // Sync in background
+        _syncSettlementsFromRemote(groupId);
+      }
 
       return settlements.map((m) {
         final data = Map<String, dynamic>.from(m);
