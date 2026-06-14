@@ -148,44 +148,64 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
 
           // Expenses List
           Expanded(
-            child: expensesAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: SkeletonList(itemCount: 6),
-              ),
-              error: (err, _) => Center(
-                child: Text(
-                  'Error loading expenses: $err',
-                  style: const TextStyle(color: Colors.red),
+            child: RefreshIndicator(
+              color: AppColors.surface,
+              backgroundColor: AppColors.textPrimary,
+              strokeWidth: 3,
+              onRefresh: () async {
+                ref.invalidate(monthlyExpensesProvider(_selectedMonth));
+                await Future.delayed(const Duration(milliseconds: 600));
+              },
+              child: expensesAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: SkeletonList(itemCount: 6),
                 ),
-              ),
-              data: (_) {
+                error: (err, _) => Center(
+                  child: Text(
+                    'Error loading expenses: $err',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+                data: (_) {
                 if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.receipt_long_outlined,
-                          size: 64,
-                          color: AppColors.border,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No expenses found',
-                          style: TextStyle(
-                            color: AppColors.textTertiary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    slivers: [
+                      SliverFillRemaining(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.receipt_long_outlined,
+                                size: 64,
+                                color: AppColors.border,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No expenses found',
+                                style: TextStyle(
+                                  color: AppColors.textTertiary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   );
                 }
 
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
                   itemCount: filtered.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, index) {
@@ -296,6 +316,7 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
               },
             ),
           ),
+        ),
         ],
       ),
     );

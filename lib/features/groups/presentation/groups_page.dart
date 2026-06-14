@@ -111,98 +111,111 @@ class GroupsPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(context, ref),
-            const SizedBox(height: AppSpacing.xl),
+      body: RefreshIndicator(
+        color: AppColors.surface,
+        backgroundColor: AppColors.textPrimary,
+        strokeWidth: 3,
+        onRefresh: () async {
+          // Invalidate the provider to trigger a re-fetch
+          ref.invalidate(userGroupsProvider);
+          // Wait a short moment so the animation has time to show
+          await Future.delayed(const Duration(milliseconds: 600));
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(context, ref),
+              const SizedBox(height: AppSpacing.xl),
 
-            groupsAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: SkeletonGroupList(itemCount: 4),
-              ),
-              error: (e, st) => CustomErrorWidget(
-                error: e,
-                onRetry: () => ref.refresh(userGroupsProvider),
-              ),
-              data: (groups) {
-                if (groups.isEmpty) {
-                  return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 80),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.surfaceVariant),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.group_outlined,
-                          size: 56,
-                          color: AppColors.textDisabled,
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          'No groups yet',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+              groupsAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: SkeletonGroupList(itemCount: 4),
+                ),
+                error: (e, st) => CustomErrorWidget(
+                  error: e,
+                  onRetry: () => ref.refresh(userGroupsProvider),
+                ),
+                data: (groups) {
+                  if (groups.isEmpty) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 80),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.surfaceVariant),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.group_outlined,
+                            size: 56,
+                            color: AppColors.textDisabled,
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Create or join a group to split expenses',
-                          style: TextStyle(
-                            color: AppColors.textTertiary,
-                            fontSize: 14,
+                          const SizedBox(height: AppSpacing.lg),
+                          Text(
+                            'No groups yet',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: groups.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final group = groups[index];
-                    final isAdmin = group.createdBy == user?.id;
-
-                    // Staggered entry animation
-                    return TweenAnimationBuilder<double>(
-                      duration: Duration(milliseconds: 300 + (index * 80)),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, val, child) {
-                        return Opacity(
-                          opacity: val,
-                          child: Transform.translate(
-                            offset: Offset(0, 15 * (1 - val)),
-                            child: child,
+                          const SizedBox(height: 6),
+                          Text(
+                            'Create or join a group to split expenses',
+                            style: TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 14,
+                            ),
                           ),
-                        );
-                      },
-                      child: _GroupCard(
-                        group: group,
-                        isAdmin: isAdmin,
-                        onTap: () => context.push('/group/${group.id}'),
+                        ],
                       ),
                     );
-                  },
-                );
-              },
-            ),
-          ],
+                  }
+
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: groups.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final group = groups[index];
+                      final isAdmin = group.createdBy == user?.id;
+
+                      // Staggered entry animation
+                      return TweenAnimationBuilder<double>(
+                        duration: Duration(milliseconds: 300 + (index * 80)),
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, val, child) {
+                          return Opacity(
+                            opacity: val,
+                            child: Transform.translate(
+                              offset: Offset(0, 15 * (1 - val)),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: _GroupCard(
+                          group: group,
+                          isAdmin: isAdmin,
+                          onTap: () => context.push('/group/${group.id}'),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

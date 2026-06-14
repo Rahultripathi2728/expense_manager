@@ -290,10 +290,22 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
               Expanded(
                 child: selectedGroupId == null
                     ? const SizedBox.shrink()
-                    : SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.all(AppSpacing.lg),
-                        child: ref
+                    : RefreshIndicator(
+                        color: AppColors.surface,
+                        backgroundColor: AppColors.textPrimary,
+                        strokeWidth: 3,
+                        onRefresh: () async {
+                          if (selectedGroupId != null) {
+                            ref.invalidate(groupBalancesProvider(selectedGroupId!));
+                          }
+                          await Future.delayed(const Duration(milliseconds: 600));
+                        },
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          padding: const EdgeInsets.all(AppSpacing.lg),
+                          child: ref
                             .watch(groupBalancesProvider(selectedGroupId!))
                             .when(
                               loading: () => Padding(

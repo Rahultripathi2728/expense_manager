@@ -151,10 +151,21 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.lg, top: AppSpacing.lg, bottom: 100),
-        child: Column(
+      body: RefreshIndicator(
+        color: AppColors.surface,
+        backgroundColor: AppColors.textPrimary,
+        strokeWidth: 3,
+        onRefresh: () async {
+          ref.invalidate(monthlyExpensesProvider(currentMonth));
+          ref.invalidate(dailySummaryProvider(_selectedDate));
+          await Future.delayed(const Duration(milliseconds: 600));
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.only(left: AppSpacing.lg, right: AppSpacing.lg, top: AppSpacing.lg, bottom: 100),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Welcome, $displayName', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
