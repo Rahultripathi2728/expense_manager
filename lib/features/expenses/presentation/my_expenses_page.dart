@@ -16,6 +16,7 @@ import '../domain/expense_split_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
+import '../../../shared/widgets/custom_error_widget.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
@@ -58,43 +59,78 @@ class _MyExpensesTab extends ConsumerWidget {
     final controller = TextEditingController(
       text: profile.monthlyBudget.toStringAsFixed(0),
     );
+    bool loading = false;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        backgroundColor: AppColors.surface,
-        title: const Text(
-          'Edit Monthly Budget',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Budget Amount (₹)',
-            hintText: 'Enter new monthly budget',
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          backgroundColor: AppColors.surface,
+          title: const Text(
+            'Edit Monthly Budget',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.textPrimary,
-              foregroundColor: AppColors.surface,
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Budget Amount (₹)',
+              hintText: 'Enter new monthly budget',
             ),
-            onPressed: () async {
-              final val = double.tryParse(controller.text) ?? 0.0;
-              final updated = profile.copyWith(monthlyBudget: val);
-              await ref.read(profileRepositoryProvider).updateProfile(updated);
-              ref.invalidate(currentProfileProvider);
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
           ),
-        ],
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            setState(() => loading = true);
+                            try {
+                              final val = double.tryParse(controller.text) ?? 0.0;
+                              final updated = profile.copyWith(monthlyBudget: val);
+                              await ref.read(profileRepositoryProvider).updateProfile(updated);
+                              ref.invalidate(currentProfileProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.surface,
+                            ),
+                          )
+                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -232,11 +268,9 @@ class _MyExpensesTab extends ConsumerWidget {
               padding: EdgeInsets.only(top: 20),
               child: SkeletonList(itemCount: 4),
             ),
-            error: (err, _) => Center(
-              child: Text(
-                'Error loading expenses: $err',
-                style: const TextStyle(color: Colors.red),
-              ),
+            error: (err, _) => CustomErrorWidget(
+              error: err,
+              onRetry: () => ref.invalidate(monthlyExpensesProvider(month)),
             ),
             data: (expenses) {
 

@@ -34,7 +34,10 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
             child: Text('Cancel', style: TextStyle(color: AppColors.textPrimary)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              minimumSize: const Size(100, 48),
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Delete', style: TextStyle(color: AppColors.surface)),
           ),

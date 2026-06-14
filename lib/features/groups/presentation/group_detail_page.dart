@@ -371,7 +371,10 @@ class GroupDetailPage extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              minimumSize: const Size(100, 48),
+            ),
             onPressed: () async {
               Navigator.pop(context);
               try {
@@ -411,23 +414,43 @@ class GroupDetailPage extends ConsumerWidget {
           content: const Text(
             'As the admin, you must transfer ownership to another member before leaving.',
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                _showTransferDialog(
-                  context,
-                  ref,
-                  group,
-                  otherMembers,
-                  myUserId,
-                );
-              },
-              child: const Text('Select Admin'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      _showTransferDialog(
+                        context,
+                        ref,
+                        group,
+                        otherMembers,
+                        myUserId,
+                      );
+                    },
+                    child: const Text('Select Admin', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -446,34 +469,53 @@ class GroupDetailPage extends ConsumerWidget {
               ? 'You are the last member. Leaving will delete the group. Continue?'
               : 'Are you sure you want to leave this group?',
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () async {
-              Navigator.pop(context);
-              try {
-                if (isLastMember) {
-                  await ref.read(groupRepositoryProvider).deleteGroup(group.id);
-                } else {
-                  await ref
-                      .read(groupRepositoryProvider)
-                      .leaveGroup(group.id, myUserId);
-                }
-                ref.invalidate(userGroupsProvider);
-                if (context.mounted) context.pop();
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Error: $e')));
-                }
-              }
-            },
-            child: const Text('Leave'),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: AppColors.surface,
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    try {
+                      if (isLastMember) {
+                        await ref.read(groupRepositoryProvider).deleteGroup(group.id);
+                      } else {
+                        await ref
+                            .read(groupRepositoryProvider)
+                            .leaveGroup(group.id, myUserId);
+                      }
+                      ref.invalidate(userGroupsProvider);
+                      if (context.mounted) context.pop();
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      }
+                    }
+                  },
+                  child: const Text('Leave', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -503,6 +545,7 @@ class GroupDetailPage extends ConsumerWidget {
                   'User ID: ${member.userId.substring(0, 5)}...',
                 ), // Profile data not directly available here, so using ID as fallback
                 trailing: ElevatedButton(
+                  style: ElevatedButton.styleFrom(minimumSize: Size.zero),
                   onPressed: () async {
                     Navigator.pop(context);
                     try {

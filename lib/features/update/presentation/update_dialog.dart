@@ -174,11 +174,13 @@ class _UpdateDialogState extends State<UpdateDialog> {
             ),
             if (_errorMessage != null)
               ElevatedButton(
+                style: ElevatedButton.styleFrom(minimumSize: const Size(100, 48)),
                 onPressed: _launchBrowser,
                 child: const Text('Open in Browser'),
               )
             else
               ElevatedButton(
+                style: ElevatedButton.styleFrom(minimumSize: const Size(100, 48)),
                 onPressed: _startUpdate,
                 child: const Text('Update Now'),
               ),

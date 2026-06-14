@@ -6,6 +6,7 @@ import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
 import '../../../core/services/export_service.dart';
 import '../../../shared/widgets/animation_helpers.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../data/expense_repository.dart';
 
 class ViewAllExpensesPage extends ConsumerStatefulWidget {
@@ -148,8 +149,9 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
           // Expenses List
           Expanded(
             child: expensesAsync.when(
-              loading: () => Center(
-                child: CircularProgressIndicator(color: AppColors.textPrimary),
+              loading: () => const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: SkeletonList(itemCount: 6),
               ),
               error: (err, _) => Center(
                 child: Text(

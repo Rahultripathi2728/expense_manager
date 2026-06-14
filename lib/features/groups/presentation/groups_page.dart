@@ -8,6 +8,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../data/group_repository.dart';
 import '../../auth/data/auth_repository.dart';
 import '../domain/group_model.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 
 class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});
@@ -119,11 +120,9 @@ class GroupsPage extends ConsumerWidget {
             const SizedBox(height: AppSpacing.xl),
 
             groupsAsync.when(
-              loading: () => SizedBox(
-                height: 200,
-                child: Center(
-                  child: CircularProgressIndicator(color: AppColors.textPrimary),
-                ),
+              loading: () => const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: SkeletonGroupList(itemCount: 4),
               ),
               error: (e, _) => SizedBox(
                 height: 200,
@@ -242,49 +241,62 @@ class GroupsPage extends ConsumerWidget {
               ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.textPrimary,
-                foregroundColor: AppColors.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
                 ),
-              ),
-              onPressed: loading
-                  ? null
-                  : () async {
-                      final name = nameCtrl.text.trim();
-                      if (name.isEmpty) return;
-
-                      final user = ref.read(authStateProvider).valueOrNull;
-                      if (user == null) return;
-
-                      setState(() => loading = true);
-                      try {
-                        await ref
-                            .read(groupRepositoryProvider)
-                            .createGroup(name, user.id);
-                        ref.invalidate(userGroupsProvider);
-                        if (context.mounted) Navigator.pop(context);
-                      } finally {
-                        if (context.mounted) setState(() => loading = false);
-                      }
-                    },
-              child: loading
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.surface,
-                      ),
-                    )
-                  : const Text('Create'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final name = nameCtrl.text.trim();
+                            if (name.isEmpty) return;
+      
+                            final user = ref.read(authStateProvider).valueOrNull;
+                            if (user == null) return;
+      
+                            setState(() => loading = true);
+                            try {
+                              await ref
+                                  .read(groupRepositoryProvider)
+                                  .createGroup(name, user.id);
+                              ref.invalidate(userGroupsProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.surface,
+                            ),
+                          )
+                        : const Text('Create', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -329,60 +341,73 @@ class GroupsPage extends ConsumerWidget {
               ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.textPrimary,
-                foregroundColor: AppColors.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
                 ),
-              ),
-              onPressed: loading
-                  ? null
-                  : () async {
-                      final code = codeCtrl.text.trim();
-                      if (code.length != 6) {
-                        setState(() => error = 'Code must be 6 characters');
-                        return;
-                      }
-
-                      setState(() {
-                        loading = true;
-                        error = null;
-                      });
-                      try {
-                        final currentUser = ref
-                            .read(authStateProvider)
-                            .valueOrNull;
-                        if (currentUser == null) return;
-                        await ref
-                            .read(groupRepositoryProvider)
-                            .joinGroup(code, currentUser.id);
-                        ref.invalidate(userGroupsProvider);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (e) {
-                        setState(
-                          () => error = 'Invalid code or already joined',
-                        );
-                      } finally {
-                        if (context.mounted) setState(() => loading = false);
-                      }
-                    },
-              child: loading
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.surface,
-                      ),
-                    )
-                  : const Text('Join'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final code = codeCtrl.text.trim();
+                            if (code.length != 6) {
+                              setState(() => error = 'Code must be 6 characters');
+                              return;
+                            }
+      
+                            setState(() {
+                              loading = true;
+                              error = null;
+                            });
+                            try {
+                              final currentUser = ref
+                                  .read(authStateProvider)
+                                  .valueOrNull;
+                              if (currentUser == null) return;
+                              await ref
+                                  .read(groupRepositoryProvider)
+                                  .joinGroup(code, currentUser.id);
+                              ref.invalidate(userGroupsProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              setState(
+                                () => error = 'Invalid code or already joined',
+                              );
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.surface,
+                            ),
+                          )
+                        : const Text('Join', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

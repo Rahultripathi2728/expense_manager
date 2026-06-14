@@ -265,7 +265,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                                   return 'Email is required';
                                 }
                                 final emailRegex = RegExp(
-                                  r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$',
+                                  r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
                                 );
                                 if (!emailRegex.hasMatch(v.trim())) {
                                   return 'Enter a valid email';

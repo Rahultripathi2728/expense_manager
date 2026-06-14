@@ -805,6 +805,7 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                                                       foregroundColor:
                                                                           Colors
                                                                               .white,
+                                                                      minimumSize: const Size(100, 48),
                                                                       shape: RoundedRectangleBorder(
                                                                         borderRadius:
                                                                             BorderRadius.circular(

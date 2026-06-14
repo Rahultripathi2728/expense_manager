@@ -263,7 +263,7 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                           milliseconds: 300,
                                         ),
                                         curve: Curves.easeInOutCubic,
-                                        width: isActive ? 76.0 : 0.0,
+                                        width: isActive ? 64.0 : 0.0,
                                         child: ClipRect(
                                           child: isActive
                                               ? Padding(
@@ -275,11 +275,11 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                                     style: TextStyle(
                                                       color: AppColors.surface,
                                                       fontWeight: FontWeight.w700,
-                                                      fontSize: 12,
+                                                      fontSize: 11,
                                                       letterSpacing: -0.2,
                                                     ),
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.visible,
+                                                    overflow: TextOverflow.fade,
                                                     softWrap: false,
                                                   ),
                                                 )

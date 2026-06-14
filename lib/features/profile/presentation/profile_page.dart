@@ -101,20 +101,37 @@ class ProfilePage extends ConsumerWidget {
                   builder: (_) => AlertDialog(
                     title: const Text('Sign Out'),
                     content: const Text('Are you sure you want to sign out?'),
+                    actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ref.read(authStateProvider.notifier).signOut();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.error,
-                        ),
-                        child: const Text('Sign Out'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(0, 48),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                              child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                ref.read(authStateProvider.notifier).signOut();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.error,
+                                foregroundColor: AppColors.surface,
+                                minimumSize: const Size(0, 48),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -148,42 +165,62 @@ class ProfilePage extends ConsumerWidget {
               prefixIcon: Icon(Icons.currency_rupee),
             ),
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: loading
-                  ? null
-                  : () async {
-                      final val = double.tryParse(ctrl.text);
-                      if (val == null) return;
-
-                      final profile = ref
-                          .read(currentProfileProvider)
-                          .valueOrNull;
-                      if (profile == null) return;
-
-                      setState(() => loading = true);
-                      try {
-                        final updated = profile.copyWith(monthlyBudget: val);
-                        await ref
-                            .read(profileRepositoryProvider)
-                            .updateProfile(updated);
-                        ref.invalidate(currentProfileProvider);
-                        if (context.mounted) Navigator.pop(context);
-                      } finally {
-                        if (context.mounted) setState(() => loading = false);
-                      }
-                    },
-              child: loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final val = double.tryParse(ctrl.text);
+                            if (val == null) return;
+      
+                            final profile = ref
+                                .read(currentProfileProvider)
+                                .valueOrNull;
+                            if (profile == null) return;
+      
+                            setState(() => loading = true);
+                            try {
+                              final updated = profile.copyWith(monthlyBudget: val);
+                              await ref
+                                  .read(profileRepositoryProvider)
+                                  .updateProfile(updated);
+                              ref.invalidate(currentProfileProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -213,36 +250,56 @@ class ProfilePage extends ConsumerWidget {
               ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: loading
-                  ? null
-                  : () async {
-                      if (nameCtrl.text.trim().isEmpty) return;
-                      setState(() => loading = true);
-                      try {
-                        await ref
-                            .read(authStateProvider.notifier)
-                            .updateName(nameCtrl.text.trim());
-                        ref.invalidate(currentProfileProvider);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (e) {
-                        // Handle error
-                      } finally {
-                        if (context.mounted) setState(() => loading = false);
-                      }
-                    },
-              child: loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            if (nameCtrl.text.trim().isEmpty) return;
+                            setState(() => loading = true);
+                            try {
+                              await ref
+                                  .read(authStateProvider.notifier)
+                                  .updateName(nameCtrl.text.trim());
+                              ref.invalidate(currentProfileProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              // Handle error
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -283,45 +340,65 @@ class ProfilePage extends ConsumerWidget {
               ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: loading
-                  ? null
-                  : () async {
-                      if (oldCtrl.text.isEmpty || newCtrl.text.isEmpty) return;
-
-                      setState(() {
-                        loading = true;
-                        error = null;
-                      });
-                      try {
-                        await ref
-                            .read(authRepositoryProvider)
-                            .changePassword(
-                              oldPassword: oldCtrl.text,
-                              newPassword: newCtrl.text,
-                            );
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (e) {
-                        setState(
-                          () => error =
-                              'Failed to change password. Check current password.',
-                        );
-                      } finally {
-                        if (context.mounted) setState(() => loading = false);
-                      }
-                    },
-              child: loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Update'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            if (oldCtrl.text.isEmpty || newCtrl.text.isEmpty) return;
+      
+                            setState(() {
+                              loading = true;
+                              error = null;
+                            });
+                            try {
+                              await ref
+                                  .read(authRepositoryProvider)
+                                  .changePassword(
+                                    oldPassword: oldCtrl.text,
+                                    newPassword: newCtrl.text,
+                                  );
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              setState(
+                                () => error =
+                                    'Failed to change password. Check current password.',
+                              );
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Update', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
