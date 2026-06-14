@@ -946,6 +946,7 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                               },
                             ),
                       ),
+                    ),
               ),
             ],
           );
