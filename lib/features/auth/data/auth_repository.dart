@@ -1,5 +1,7 @@
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../app/constants/app_constants.dart';
 import '../domain/user_model.dart';
@@ -15,7 +17,20 @@ class AuthRepository {
   Future<UserModel?> getCurrentUser() async {
     try {
       final user = await _account.get();
-      return UserModel.fromAppwrite(user);
+      final userModel = UserModel.fromAppwrite(user);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+      return userModel;
+    } on AppwriteException catch (e) {
+      // e.code == 0 typically means network error or ClientException in Appwrite Dart SDK
+      if (e.code == 0 || e.type == 'network_unreachable') {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString('cached_user');
+        if (cached != null) {
+          return UserModel.fromJson(jsonDecode(cached));
+        }
+      }
+      return null;
     } catch (_) {
       return null;
     }

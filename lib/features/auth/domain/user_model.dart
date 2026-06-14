@@ -21,4 +21,22 @@ class UserModel {
       emailVerification: user.emailVerification,
     );
   }
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      email: json['email'] as String,
+      emailVerification: json['emailVerification'] as bool,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'emailVerification': emailVerification,
+    };
+  }
 }

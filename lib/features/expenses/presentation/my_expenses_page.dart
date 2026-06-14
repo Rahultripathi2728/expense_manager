@@ -226,6 +226,8 @@ class _MyExpensesTab extends ConsumerWidget {
           const SizedBox(height: AppSpacing.lg),
 
           expensesAsync.when(
+            skipLoadingOnReload: true,
+            skipLoadingOnRefresh: true,
             loading: () => const Padding(
               padding: EdgeInsets.only(top: 20),
               child: SkeletonList(itemCount: 4),

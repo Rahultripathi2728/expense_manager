@@ -202,6 +202,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                   Padding(
                     padding: const EdgeInsets.all(AppSpacing.md),
                     child: expensesAsync.when(
+                      skipLoadingOnReload: true,
+                      skipLoadingOnRefresh: true,
                       data: (expenses) {
                         return AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
@@ -346,6 +348,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                         );
                       }
                       return ref.watch(dailySummaryProvider(_selectedDate)).when(
+                        skipLoadingOnReload: true,
+                        skipLoadingOnRefresh: true,
                         data: (summary) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

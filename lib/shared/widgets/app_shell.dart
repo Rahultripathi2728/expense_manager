@@ -233,29 +233,32 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                           size: 20,
                                         ),
                                       ),
-                                      AnimatedSize(
+                                      AnimatedContainer(
                                         duration: const Duration(
                                           milliseconds: 300,
                                         ),
                                         curve: Curves.easeInOutCubic,
-                                        child: isActive
-                                            ? Padding(
-                                                padding: const EdgeInsets.only(
-                                                  left: 6,
-                                                ),
-                                                child: Text(
-                                                  tab.label,
-                                                  style: TextStyle(
-                                                    color: AppColors.surface,
-                                                    fontWeight: FontWeight.w700,
-                                                    fontSize: 12,
-                                                    letterSpacing: -0.2,
+                                        width: isActive ? 68.0 : 0.0,
+                                        child: ClipRect(
+                                          child: isActive
+                                              ? Padding(
+                                                  padding: const EdgeInsets.only(
+                                                    left: 6,
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.clip,
-                                                ),
-                                              )
-                                            : const SizedBox.shrink(),
+                                                  child: Text(
+                                                    tab.label,
+                                                    style: TextStyle(
+                                                      color: AppColors.surface,
+                                                      fontWeight: FontWeight.w700,
+                                                      fontSize: 12,
+                                                      letterSpacing: -0.2,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.visible,
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
                                       ),
                                     ],
                                   ),
