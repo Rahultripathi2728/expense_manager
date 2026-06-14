@@ -22,18 +22,29 @@ class AuthRepository {
       await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
       return userModel;
     } on AppwriteException catch (e) {
-      // e.code == 0 typically means network error or ClientException in Appwrite Dart SDK
-      if (e.code == 0 || e.type == 'network_unreachable') {
+      if (e.code == 401) {
+        // Explicitly unauthenticated / session expired
         final prefs = await SharedPreferences.getInstance();
-        final cached = prefs.getString('cached_user');
-        if (cached != null) {
-          return UserModel.fromJson(jsonDecode(cached));
-        }
+        await prefs.remove('cached_user');
+        return null;
       }
-      return null;
+      // Any other AppwriteException (e.g. network timeout, server error, no internet)
+      return _getCachedUser();
     } catch (_) {
-      return null;
+      // General exception (SocketException, ClientException, etc.)
+      return _getCachedUser();
     }
+  }
+
+  Future<UserModel?> _getCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_user');
+      if (cached != null) {
+        return UserModel.fromJson(jsonDecode(cached));
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<UserModel> signIn({
@@ -105,6 +116,9 @@ class AuthRepository {
       await _account.deleteSession(sessionId: 'current');
     } on AppwriteException catch (_) {
       // Session may already be expired or not exist — ignore
+    } finally {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_user');
     }
   }
 

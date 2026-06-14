@@ -8,11 +8,13 @@ class UpdateInfo {
   final bool updateAvailable;
   final String? latestVersion;
   final String? releaseUrl;
+  final String? apkUrl;
 
   UpdateInfo({
     required this.updateAvailable,
     this.latestVersion,
     this.releaseUrl,
+    this.apkUrl,
   });
 }
 
@@ -39,10 +41,23 @@ class UpdateService {
 
         // Basic semantic versioning comparison
         if (_isNewerVersion(currentVersion, latestVersion)) {
+          String? apkUrl;
+          final assets = data['assets'] as List<dynamic>?;
+          if (assets != null) {
+            for (final asset in assets) {
+              final assetName = asset['name'] as String?;
+              if (assetName != null && assetName.endsWith('.apk')) {
+                apkUrl = asset['browser_download_url'] as String?;
+                break;
+              }
+            }
+          }
+
           return UpdateInfo(
             updateAvailable: true,
             latestVersion: latestVersion,
             releaseUrl: releaseUrl,
+            apkUrl: apkUrl,
           );
         }
       }

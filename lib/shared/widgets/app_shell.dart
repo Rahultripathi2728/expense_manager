@@ -152,6 +152,27 @@ class _ExpandableBottomNav extends StatefulWidget {
 }
 
 class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
+  double _getTabWidth(int index, double totalWidth, int currentIndex) {
+    const double activeWeight = 1.8;
+    const double inactiveWeight = 1.0;
+    
+    // Total weight = (1 active tab * 1.8) + (3 inactive tabs * 1.0) = 4.8
+    final double totalWeight = activeWeight + (widget.tabs.length - 1) * inactiveWeight;
+    
+    final bool isActive = index == currentIndex;
+    final double weight = isActive ? activeWeight : inactiveWeight;
+    
+    return totalWidth * (weight / totalWeight);
+  }
+
+  double _getActiveLeft(double totalWidth, int currentIndex) {
+    double left = 0.0;
+    for (int i = 0; i < currentIndex; i++) {
+      left += _getTabWidth(i, totalWidth, currentIndex);
+    }
+    return left;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -178,17 +199,20 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final tabWidth = constraints.maxWidth / widget.tabs.length;
+                  final totalWidth = constraints.maxWidth;
+                  final activeWidth = _getTabWidth(widget.currentIndex, totalWidth, widget.currentIndex);
+                  final activeLeft = _getActiveLeft(totalWidth, widget.currentIndex);
+
                   return Stack(
                     children: [
                       // Sliding Background
                       AnimatedPositioned(
                         duration: const Duration(milliseconds: 400),
                         curve: Curves.easeOutBack,
-                        left: widget.currentIndex * tabWidth,
+                        left: activeLeft,
                         top: 0,
                         bottom: 0,
-                        width: tabWidth,
+                        width: activeWidth,
                         child: Container(
                           margin: const EdgeInsets.symmetric(horizontal: 4),
                           decoration: BoxDecoration(
@@ -202,9 +226,10 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                         children: List.generate(widget.tabs.length, (index) {
                           final tab = widget.tabs[index];
                           final isActive = index == widget.currentIndex;
+                          final currentTabWidth = _getTabWidth(index, totalWidth, widget.currentIndex);
 
                           return SizedBox(
-                            width: tabWidth,
+                            width: currentTabWidth,
                             child: GestureDetector(
                               onTap: () => widget.onTap(tab.path),
                               behavior: HitTestBehavior.opaque,
@@ -212,7 +237,7 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
+                                    horizontal: 6,
                                     vertical: 8,
                                   ),
                                   child: Row(
@@ -238,7 +263,7 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                           milliseconds: 300,
                                         ),
                                         curve: Curves.easeInOutCubic,
-                                        width: isActive ? 68.0 : 0.0,
+                                        width: isActive ? 76.0 : 0.0,
                                         child: ClipRect(
                                           child: isActive
                                               ? Padding(
@@ -255,6 +280,7 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                                     ),
                                                     maxLines: 1,
                                                     overflow: TextOverflow.visible,
+                                                    softWrap: false,
                                                   ),
                                                 )
                                               : const SizedBox.shrink(),
