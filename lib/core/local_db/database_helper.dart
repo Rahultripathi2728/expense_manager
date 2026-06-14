@@ -87,6 +87,18 @@ CREATE TABLE group_members (
 ''');
 
     await db.execute('''
+CREATE TABLE settlements (
+  id $idType,
+  groupId $textType,
+  fromUserId $textType,
+  toUserId $textType,
+  amount $realType,
+  settledExpenseIds $textType,
+  createdAt $textType
+)
+''');
+
+    await db.execute('''
 CREATE TABLE sync_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   collectionName $textType,
@@ -103,6 +115,7 @@ CREATE TABLE sync_queue (
     await db.delete('expenses');
     await db.delete('groups');
     await db.delete('group_members');
+    await db.delete('settlements');
     await db.delete('sync_queue');
   }
 

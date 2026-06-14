@@ -17,6 +17,7 @@ import '../../expenses/domain/expense_model.dart';
 import '../../expenses/domain/expense_split_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../../shared/widgets/custom_error_widget.dart';
 
 final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
   ref,
@@ -172,8 +173,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
       body: groupsAsync.when(
         loading: () =>
             Center(child: CircularProgressIndicator(color: AppColors.textPrimary)),
-        error: (e, _) => Center(
-          child: Text('Error: $e', style: const TextStyle(color: Colors.red)),
+        error: (e, _) => CustomErrorWidget(
+          error: e,
+          onRetry: () => ref.refresh(userGroupsProvider),
         ),
         data: (groups) {
           if (groups.isEmpty) {
@@ -302,11 +304,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                   ),
                                 ),
                               ),
-                              error: (err, _) => Center(
-                                child: Text(
-                                  'Error: $err',
-                                  style: const TextStyle(color: Colors.red),
-                                ),
+                              error: (err, _) => CustomErrorWidget(
+                                error: err,
+                                onRetry: () => ref.refresh(groupBalancesProvider(selectedGroupId!)),
                               ),
                               data: (data) {
                                 final myUserId = user?.id ?? '';

@@ -49,13 +49,18 @@ class SyncService {
         final payloadStr = item['payload'] as String?;
 
         try {
+          String targetTableId;
+          if (collectionName == 'expenses') targetTableId = AppConstants.expensesCollection;
+          else if (collectionName == 'groups') targetTableId = AppConstants.groupsCollection;
+          else if (collectionName == 'group_members') targetTableId = AppConstants.groupMembersCollection;
+          else if (collectionName == 'settlements') targetTableId = AppConstants.settlementsCollection;
+          else targetTableId = collectionName;
+
           if (action == 'create' && payloadStr != null) {
             final payload = jsonDecode(payloadStr) as Map<String, dynamic>;
             await _tablesDB.createRow(
               databaseId: AppConstants.databaseId,
-              tableId: collectionName == 'expenses' 
-                  ? AppConstants.expensesCollection 
-                  : collectionName, // Update based on your collection names
+              tableId: targetTableId,
               rowId: documentId ?? ID.unique(),
               data: payload,
             );
@@ -63,18 +68,14 @@ class SyncService {
             final payload = jsonDecode(payloadStr) as Map<String, dynamic>;
             await _tablesDB.updateRow(
               databaseId: AppConstants.databaseId,
-              tableId: collectionName == 'expenses' 
-                  ? AppConstants.expensesCollection 
-                  : collectionName,
+              tableId: targetTableId,
               rowId: documentId,
               data: payload,
             );
           } else if (action == 'delete' && documentId != null) {
             await _tablesDB.deleteRow(
               databaseId: AppConstants.databaseId,
-              tableId: collectionName == 'expenses' 
-                  ? AppConstants.expensesCollection 
-                  : collectionName,
+              tableId: targetTableId,
               rowId: documentId,
             );
           }

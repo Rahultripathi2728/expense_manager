@@ -26,20 +26,24 @@ final groupProfilesProvider = FutureProvider.autoDispose
       final userIds = members.map((m) => m.userId).toList();
       final tablesDB = ref.watch(appwriteTablesDBProvider);
 
-      final futures = userIds.map(
-        (id) => tablesDB.listRows(
-          databaseId: AppConstants.databaseId,
-          tableId: AppConstants.profilesCollection,
-          queries: [Query.equal('userId', id)],
-        ),
-      );
+      final futures = userIds.map((id) async {
+        try {
+          return await tablesDB.listRows(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.profilesCollection,
+            queries: [Query.equal('userId', id)],
+          );
+        } catch (_) {
+          return null;
+        }
+      });
 
       final results = await Future.wait(futures);
       final profiles = <Profile>[];
 
       for (int i = 0; i < userIds.length; i++) {
         final res = results[i];
-        if (res.rows.isNotEmpty) {
+        if (res != null && res.rows.isNotEmpty) {
           profiles.add(Profile.fromMap(res.rows.first.dataWithId));
         } else {
           profiles.add(

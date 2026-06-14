@@ -9,6 +9,7 @@ import '../data/group_repository.dart';
 import '../../auth/data/auth_repository.dart';
 import '../domain/group_model.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
+import '../../../shared/widgets/custom_error_widget.dart';
 
 class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});
@@ -124,14 +125,9 @@ class GroupsPage extends ConsumerWidget {
                 padding: EdgeInsets.only(top: 10),
                 child: SkeletonGroupList(itemCount: 4),
               ),
-              error: (e, _) => SizedBox(
-                height: 200,
-                child: Center(
-                  child: Text(
-                    'Error loading groups: $e',
-                    style: TextStyle(color: AppColors.error),
-                  ),
-                ),
+              error: (e, st) => CustomErrorWidget(
+                error: e,
+                onRetry: () => ref.refresh(userGroupsProvider),
               ),
               data: (groups) {
                 if (groups.isEmpty) {
