@@ -1,7 +1,9 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'package:flutter/material.dart';
-import 'package:ota_update/ota_update.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:open_filex/open_filex.dart';
 import '../data/update_service.dart';
 
 class UpdateDialog extends StatefulWidget {
@@ -52,71 +54,59 @@ class _UpdateDialogState extends State<UpdateDialog> {
     });
 
     try {
-      OtaUpdate()
-          .execute(
-        widget.updateInfo.apkUrl!,
-        destinationFilename: 'expense_manager_update_${widget.updateInfo.latestVersion}.apk',
-        androidProviderAuthority: 'com.expensemanager.expense_manager.ota_update_provider',
-      )
-          .listen(
-        (OtaEvent event) {
-          if (!mounted) return;
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(widget.updateInfo.apkUrl!));
+      final response = await client.send(request);
+
+      if (response.statusCode != 200 && response.statusCode != 302) {
+        throw Exception('Failed to download update. Server returned ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength ?? 0;
+      var receivedBytes = 0;
+
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/expense_manager_update_${widget.updateInfo.latestVersion}.apk';
+      final file = File(filePath);
+      final sink = file.openWrite();
+
+      await for (var chunk in response.stream) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        if (contentLength > 0 && mounted) {
           setState(() {
-            switch (event.status) {
-              case OtaStatus.DOWNLOADING:
-                _statusMessage = 'Downloading update...';
-                _downloadProgress = double.tryParse(event.value ?? '0') ?? 0.0;
-                break;
-              case OtaStatus.INSTALLING:
-                _statusMessage = 'Installing update...';
-                _downloadProgress = 100.0;
-                break;
-              case OtaStatus.INSTALLATION_DONE:
-                _statusMessage = 'Installation done.';
-                _isDownloading = false;
-                break;
-              case OtaStatus.ALREADY_RUNNING_ERROR:
-                _errorMessage = 'An update download is already running.';
-                _isDownloading = false;
-                break;
-              case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
-                _errorMessage = 'Permission denied to install unknown apps. Please enable it in system settings.';
-                _isDownloading = false;
-                break;
-              case OtaStatus.DOWNLOAD_ERROR:
-                _errorMessage = 'Download failed. Please check your internet connection.';
-                _isDownloading = false;
-                break;
-              case OtaStatus.INSTALLATION_ERROR:
-                _errorMessage = 'Installation failed. Please try installing the APK manually.';
-                _isDownloading = false;
-                break;
-              case OtaStatus.CHECKSUM_ERROR:
-                _errorMessage = 'Downloaded file is corrupted (Checksum error).';
-                _isDownloading = false;
-                break;
-              case OtaStatus.CANCELED:
-                _errorMessage = 'Update canceled.';
-                _isDownloading = false;
-                break;
-              default:
-                _errorMessage = 'An error occurred during update: ${event.status}';
-                _isDownloading = false;
-            }
+            _downloadProgress = (receivedBytes / contentLength) * 100;
+            _statusMessage = 'Downloading update...';
           });
-        },
-        onError: (error) {
-          if (!mounted) return;
-          setState(() {
-            _errorMessage = 'Update failed: $error';
-            _isDownloading = false;
-          });
-        },
-      );
+        }
+      }
+      
+      await sink.flush();
+      await sink.close();
+
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'Installing update...';
+          _downloadProgress = 100.0;
+        });
+      }
+
+      final result = await OpenFilex.open(filePath);
+      
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          if (result.type != ResultType.done) {
+            _errorMessage = 'Failed to open installer: ${result.message}';
+          } else {
+            _statusMessage = 'Installation started.';
+          }
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to start update: $e';
+        _errorMessage = 'Update failed: $e';
         _isDownloading = false;
       });
     }
