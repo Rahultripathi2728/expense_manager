@@ -234,7 +234,9 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                               onTap: () => widget.onTap(tab.path),
                               behavior: HitTestBehavior.opaque,
                               child: Center(
-                                child: AnimatedContainer(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,
@@ -288,6 +290,7 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                                       ),
                                     ],
                                   ),
+                                ),
                                 ),
                               ),
                             ),

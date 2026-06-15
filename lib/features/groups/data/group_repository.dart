@@ -122,15 +122,10 @@ class GroupRepository {
       final db = await _dbHelper.database;
       await db.insert('group_members', {'id': memberId, ...memberData});
       
-      final groupData = groups.rows.first.dataWithId;
-      groupData['id'] = groupData['\$id'];
-      groupData.remove('\$id');
-      groupData.remove('\$permissions');
-      groupData.remove('\$collectionId');
-      groupData.remove('\$databaseId');
-      groupData.remove('\$createdAt');
-      groupData.remove('\$updatedAt');
-      await db.insert('groups', groupData, conflictAlgorithm: ConflictAlgorithm.replace);
+      final group = Group.fromMap(groups.rows.first.dataWithId);
+      final groupDataToInsert = group.toMap();
+      groupDataToInsert['id'] = group.id;
+      await db.insert('groups', groupDataToInsert, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -196,14 +191,9 @@ class GroupRepository {
       );
 
       for (final doc in memberships.rows) {
-        final data = doc.dataWithId;
-        data['id'] = data['\$id'];
-        data.remove('\$id');
-        data.remove('\$permissions');
-        data.remove('\$collectionId');
-        data.remove('\$databaseId');
-        data.remove('\$createdAt');
-        data.remove('\$updatedAt');
+        final member = GroupMember.fromMap(doc.dataWithId);
+        final data = member.toMap();
+        data['id'] = member.id;
         await db.insert('group_members', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 

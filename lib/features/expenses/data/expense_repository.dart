@@ -142,18 +142,10 @@ class ExpenseRepository {
 
       final db = await _dbHelper.database;
       for (final doc in res.rows) {
-        final data = doc.dataWithId;
-        final id = data['\$id'];
-        data.remove('\$id');
-        data['id'] = id;
-        
-        // Remove nested/unsupported fields for SQLite
-        data.remove('\$permissions');
-        data.remove('\$collectionId');
-        data.remove('\$databaseId');
-        data.remove('\$createdAt');
-        data.remove('\$updatedAt');
-
+        final expense = Expense.fromMap(doc.dataWithId);
+        final data = expense.toMap();
+        data['id'] = expense.id;
+        data['isSettled'] = expense.isSettled ? 1 : 0; // Ensure int conversion for SQLite
         await db.insert('expenses', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     } catch (e) {
@@ -244,15 +236,10 @@ class ExpenseRepository {
         );
         final db = await _dbHelper.database;
         for (final doc in res.rows) {
-          final data = doc.dataWithId;
-          final id = data['\$id'];
-          data.remove('\$id');
-          data['id'] = id;
-          data.remove('\$permissions');
-          data.remove('\$collectionId');
-          data.remove('\$databaseId');
-          data.remove('\$createdAt');
-          data.remove('\$updatedAt');
+          final expense = Expense.fromMap(doc.dataWithId);
+          final data = expense.toMap();
+          data['id'] = expense.id;
+          data['isSettled'] = expense.isSettled ? 1 : 0;
           await db.insert('expenses', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       } catch (e) {
