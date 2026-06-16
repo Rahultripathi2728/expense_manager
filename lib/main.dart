@@ -42,7 +42,7 @@ void main() async {
   };
 
   if (!kIsWeb) {
-    Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    Workmanager().initialize(callbackDispatcher);
     Workmanager().registerPeriodicTask(
       '1',
       'offlineSyncTask',

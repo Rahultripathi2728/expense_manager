@@ -1,8 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:path/path.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_sqlcipher/sqflite.dart' as cipher;
+import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/constants/app_constants.dart';
@@ -24,8 +23,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB(String filePath) async {
     if (kIsWeb) {
-      databaseFactory = databaseFactoryFfiWeb;
-      return await databaseFactory.openDatabase(
+      return await databaseFactoryFfiWeb.openDatabase(
         filePath,
         options: OpenDatabaseOptions(
           version: 2,
@@ -55,7 +53,7 @@ class DatabaseHelper {
         await _migrateToEncrypted(path);
       }
 
-      return await cipher.openDatabase(
+      return await openDatabase(
         path,
         password: AppConstants.localDbEncryptionKey,
         version: 2,
@@ -72,9 +70,9 @@ class DatabaseHelper {
     final oldFile = File(path);
     await oldFile.rename(oldPath);
 
-    final oldDb = await cipher.openDatabase(oldPath, password: '');
+    final oldDb = await openDatabase(oldPath, password: '');
     
-    final newDb = await cipher.openDatabase(
+    final newDb = await openDatabase(
       path,
       password: AppConstants.localDbEncryptionKey,
       version: 2,

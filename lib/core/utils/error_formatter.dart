@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:appwrite/appwrite.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 /// Centralized utility for formatting raw errors/exceptions into user-friendly messages.
 class ErrorFormatter {
