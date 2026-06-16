@@ -9,6 +9,7 @@ import '../../groups/data/group_repository.dart';
 import '../../groups/domain/group_member_model.dart';
 import '../../groups/domain/group_model.dart';
 import '../data/expense_repository.dart';
+import '../../../core/utils/throttler.dart';
 
 class GroupExpenseSheet extends ConsumerStatefulWidget {
   final Group group;
@@ -26,6 +27,7 @@ class _GroupExpenseSheetState extends ConsumerState<GroupExpenseSheet> {
   String _splitType = 'Equally'; // 'Equally', 'Unequally', 'Item wise'
   DateTime _selectedDate = DateTime.now();
   bool _isLoading = false;
+  final _throttler = Throttler();
 
   List<GroupMember> _members = [];
 
@@ -33,6 +35,14 @@ class _GroupExpenseSheetState extends ConsumerState<GroupExpenseSheet> {
   void initState() {
     super.initState();
     _loadMembers();
+  }
+
+  @override
+  void dispose() {
+    _descCtrl.dispose();
+    _amtCtrl.dispose();
+    _throttler.dispose();
+    super.dispose();
   }
 
   Future<void> _loadMembers() async {
@@ -455,7 +465,7 @@ class _GroupExpenseSheetState extends ConsumerState<GroupExpenseSheet> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _submitExpense,
+                onPressed: _isLoading ? null : () => _throttler.run(_submitExpense),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(

@@ -7,12 +7,26 @@ import '../../auth/data/auth_repository.dart';
 import '../data/profile_repository.dart';
 import '../../update/data/update_service.dart';
 import '../../update/presentation/update_dialog.dart';
+import '../../../core/utils/throttler.dart';
 
-class ProfilePage extends ConsumerWidget {
+class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends ConsumerState<ProfilePage> {
+  final _throttler = Throttler();
+
+  @override
+  void dispose() {
+    _throttler.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
     final user = authState.valueOrNull;
     final profileAsync = ref.watch(currentProfileProvider);
@@ -59,7 +73,7 @@ class ProfilePage extends ConsumerWidget {
             _SettingsTile(
               icon: Icons.person_outline,
               title: 'Edit Personal Details',
-              onTap: () => _showEditProfile(context, ref, user?.name ?? ''),
+              onTap: () => _throttler.run(() => _showEditProfile(context, ref, user?.name ?? '')),
             ),
 
 
@@ -72,30 +86,30 @@ class ProfilePage extends ConsumerWidget {
                 subtitle: profile != null
                     ? '₹${profile.monthlyBudget.toStringAsFixed(0)}'
                     : '₹0',
-                onTap: () => _showBudgetEditor(
+                onTap: () => _throttler.run(() => _showBudgetEditor(
                   context,
                   ref,
                   profile?.monthlyBudget ?? 0,
-                ),
+                )),
               ),
             ),
 
             _SettingsTile(
               icon: Icons.lock_outlined,
               title: 'Change Password',
-              onTap: () => _showChangePassword(context, ref),
+              onTap: () => _throttler.run(() => _showChangePassword(context, ref)),
             ),
             _SettingsTile(
               icon: Icons.system_update_alt,
               title: 'Check for Updates',
-              onTap: () => _checkUpdate(context, ref),
+              onTap: () => _throttler.run(() => _checkUpdate(context, ref)),
             ),
             const Divider(height: AppSpacing.xxl),
             _SettingsTile(
               icon: Icons.logout,
               title: 'Sign Out',
               titleColor: AppColors.error,
-              onTap: () {
+              onTap: () => _throttler.run(() {
                 showDialog(
                   context: context,
                   builder: (_) => AlertDialog(
@@ -136,7 +150,7 @@ class ProfilePage extends ConsumerWidget {
                     ],
                   ),
                 );
-              },
+              }),
             ),
           ],
         ),

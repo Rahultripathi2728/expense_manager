@@ -18,6 +18,8 @@ import '../../expenses/domain/expense_split_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
+import '../../../core/utils/throttler.dart';
+import '../../../core/utils/error_formatter.dart';
 
 final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
   ref,
@@ -154,6 +156,13 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
   String? selectedGroupId;
   bool settling = false;
   bool _initialGroupSet = false;
+  final _throttler = Throttler();
+
+  @override
+  void dispose() {
+    _throttler.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -772,8 +781,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                                     ),
                                                     onPressed: settling
                                                         ? null
-                                                        : () async {
-                                                            // Show confirmation dialog
+                                                        : () {
+                                                            _throttler.run(() async {
+                                                              // Show confirmation dialog
                                                             final confirmed = await showDialog<bool>(
                                                               context: context,
                                                               builder: (ctx) => AlertDialog(
@@ -906,11 +916,11 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                                                 ScaffoldMessenger.of(
                                                                   context,
                                                                 ).showSnackBar(
-                                                                  SnackBar(
-                                                                    content: Text(
-                                                                      'Settlement failed: $e',
-                                                                    ),
-                                                                    backgroundColor:
+                                                                    SnackBar(
+                                                                      content: Text(
+                                                                        ErrorFormatter.format(e),
+                                                                      ),
+                                                                      backgroundColor:
                                                                         Colors
                                                                             .red,
                                                                   ),
@@ -925,6 +935,7 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                                                 );
                                                               }
                                                             }
+                                                            });
                                                           },
                                                     child: const Text(
                                                       'Mark as Settled',

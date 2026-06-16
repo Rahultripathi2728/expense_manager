@@ -8,6 +8,7 @@ class AppConstants {
 
   // ── Database ──
   static const String databaseId = 'expense_manager_db';
+  static const String localDbEncryptionKey = 'xM9q\$#vP2!aL8^kR5@wY7&nB4*tJ1%hC';
 
   // ── Collection IDs ──
   static const String profilesCollection = 'profiles';

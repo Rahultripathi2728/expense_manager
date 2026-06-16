@@ -198,7 +198,8 @@ class CategorizeService {
     for (final entry in _categoryKeywords.entries) {
       int score = 0;
       for (final keyword in entry.value) {
-        if (lowerDesc.contains(keyword)) {
+        final regex = RegExp(r'\b' + RegExp.escape(keyword) + r'\b');
+        if (regex.hasMatch(lowerDesc)) {
           score++;
         }
       }

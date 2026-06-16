@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart' as cipher;
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/constants/app_constants.dart';
@@ -26,19 +27,41 @@ class DatabaseHelper {
       return await databaseFactory.openDatabase(
         filePath,
         options: OpenDatabaseOptions(
-          version: 1,
+          version: 2,
           onCreate: _createDB,
+          onUpgrade: _upgradeDB,
         ),
       );
     } else {
       final dbPath = await getDatabasesPath();
       final path = join(dbPath, filePath);
 
-      return await openDatabase(
+      return await cipher.openDatabase(
         path,
-        version: 1,
+        password: AppConstants.localDbEncryptionKey,
+        version: 2,
         onCreate: _createDB,
+        onUpgrade: _upgradeDB,
       );
+    }
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Recreate sync_queue with nullable payload to fix NOT NULL constraint bug
+      await db.execute('DROP TABLE IF EXISTS sync_queue');
+      const textType = 'TEXT NOT NULL';
+      const textNullable = 'TEXT';
+      await db.execute('''
+CREATE TABLE sync_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  collectionName $textType,
+  documentId $textNullable,
+  action $textType,
+  payload $textNullable,
+  createdAt $textType
+)
+''');
     }
   }
 
@@ -104,7 +127,7 @@ CREATE TABLE sync_queue (
   collectionName $textType,
   documentId $textNullable,
   action $textType,
-  payload $textType,
+  payload $textNullable,
   createdAt $textType
 )
 ''');
