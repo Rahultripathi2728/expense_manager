@@ -12,7 +12,7 @@ import '../../../core/local_db/database_helper.dart';
 import '../../../core/services/sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:sqflite_sqlcipher/sqflite.dart';
+import 'package:sqflite/sqflite.dart';
 
 class GroupRepository {
   final TablesDB _tablesDB;

@@ -10,23 +10,9 @@ import '../../auth/data/auth_repository.dart';
 import '../domain/group_model.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
-import '../../../core/utils/throttler.dart';
 
-class GroupsPage extends ConsumerStatefulWidget {
+class GroupsPage extends ConsumerWidget {
   const GroupsPage({super.key});
-
-  @override
-  ConsumerState<GroupsPage> createState() => _GroupsPageState();
-}
-
-class _GroupsPageState extends ConsumerState<GroupsPage> {
-  final _throttler = Throttler();
-
-  @override
-  void dispose() {
-    _throttler.dispose();
-    super.dispose();
-  }
 
   Widget _buildHeader(BuildContext context, WidgetRef ref) {
     final width = MediaQuery.of(context).size.width;
@@ -56,7 +42,7 @@ class _GroupsPageState extends ConsumerState<GroupsPage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         OutlinedButton.icon(
-          onPressed: () => _throttler.run(() => _showJoinGroup(context, ref)),
+          onPressed: () => _showJoinGroup(context, ref),
           icon: Icon(
             Icons.person_add_alt_1_outlined,
             size: 16,
@@ -79,7 +65,7 @@ class _GroupsPageState extends ConsumerState<GroupsPage> {
         ),
         const SizedBox(width: 8),
         ElevatedButton.icon(
-          onPressed: () => _throttler.run(() => _showCreateGroup(context, ref)),
+          onPressed: () => _showCreateGroup(context, ref),
           icon: Icon(Icons.add, size: 16, color: AppColors.surface),
           label: const Text('Create Group'),
           style: ElevatedButton.styleFrom(
@@ -118,7 +104,7 @@ class _GroupsPageState extends ConsumerState<GroupsPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(themeProvider);
     final groupsAsync = ref.watch(userGroupsProvider);
     final user = ref.watch(authStateProvider).valueOrNull;

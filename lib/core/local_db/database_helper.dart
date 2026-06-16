@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'dart:io';
 import 'package:path/path.dart';
-import 'package:sqflite_sqlcipher/sqflite.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/constants/app_constants.dart';
@@ -23,108 +22,23 @@ class DatabaseHelper {
 
   Future<Database> _initDB(String filePath) async {
     if (kIsWeb) {
-      return await databaseFactoryFfiWeb.openDatabase(
+      databaseFactory = databaseFactoryFfiWeb;
+      return await databaseFactory.openDatabase(
         filePath,
         options: OpenDatabaseOptions(
-          version: 2,
+          version: 1,
           onCreate: _createDB,
-          onUpgrade: _upgradeDB,
         ),
       );
     } else {
       final dbPath = await getDatabasesPath();
       final path = join(dbPath, filePath);
 
-      bool isUnencrypted = false;
-      try {
-        final file = File(path);
-        if (await file.exists()) {
-          final bytes = await file.openRead(0, 16).first;
-          final header = String.fromCharCodes(bytes);
-          if (header.startsWith('SQLite format 3')) {
-            isUnencrypted = true;
-          }
-        }
-      } catch (e) {
-        debugPrint('Error checking DB encryption: $e');
-      }
-
-      if (isUnencrypted) {
-        await _migrateToEncrypted(path);
-      }
-
       return await openDatabase(
         path,
-        password: AppConstants.localDbEncryptionKey,
-        version: 2,
+        version: 1,
         onCreate: _createDB,
-        onUpgrade: _upgradeDB,
       );
-    }
-  }
-
-  Future<void> _migrateToEncrypted(String path) async {
-    debugPrint('Migrating unencrypted database to encrypted...');
-    final oldPath = '${path}_old';
-    
-    final oldFile = File(path);
-    await oldFile.rename(oldPath);
-
-    final oldDb = await openDatabase(oldPath, password: '');
-    
-    final newDb = await openDatabase(
-      path,
-      password: AppConstants.localDbEncryptionKey,
-      version: 2,
-      onCreate: _createDB,
-    );
-
-    final tables = ['expenses', 'groups', 'group_members', 'settlements', 'sync_queue'];
-    for (final table in tables) {
-      try {
-        final rows = await oldDb.query(table);
-        if (rows.isNotEmpty) {
-          final batch = newDb.batch();
-          for (final row in rows) {
-            batch.insert(table, row);
-          }
-          await batch.commit(noResult: true);
-        }
-      } catch (e) {
-        debugPrint('Error migrating table $table: $e');
-      }
-    }
-
-    await oldDb.close();
-    await newDb.close();
-
-    try {
-      await File(oldPath).delete();
-      final oldJournal = File('$oldPath-journal');
-      if (await oldJournal.exists()) await oldJournal.delete();
-      final oldWal = File('$oldPath-wal');
-      if (await oldWal.exists()) await oldWal.delete();
-    } catch (_) {}
-
-    debugPrint('Migration complete.');
-  }
-
-  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Recreate sync_queue with nullable payload to fix NOT NULL constraint bug
-      await db.execute('DROP TABLE IF EXISTS sync_queue');
-      const textType = 'TEXT NOT NULL';
-      const textNullable = 'TEXT';
-      await db.execute('''
-CREATE TABLE sync_queue (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  collectionName $textType,
-  documentId $textNullable,
-  action $textType,
-  payload $textNullable,
-  createdAt $textType
-)
-''');
     }
   }
 
@@ -190,7 +104,7 @@ CREATE TABLE sync_queue (
   collectionName $textType,
   documentId $textNullable,
   action $textType,
-  payload $textNullable,
+  payload $textType,
   createdAt $textType
 )
 ''');

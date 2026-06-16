@@ -8,7 +8,6 @@ import '../../../shared/services/categorize_service.dart';
 import '../domain/expense_model.dart';
 import '../data/expense_repository.dart';
 import '../../calendar/presentation/widgets/calendar_expense_card.dart'; // For group/profile providers
-import '../../../core/utils/error_formatter.dart';
 
 class ExpenseDetailPage extends ConsumerStatefulWidget {
   final Expense expense;
@@ -70,7 +69,7 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ErrorFormatter.format(e)),
+            content: Text('Failed to delete: $e'),
             backgroundColor: AppColors.error,
           ),
         );

@@ -16,7 +16,6 @@ import 'providers/add_expense_provider.dart';
 import '../../../../shared/services/categorize_service.dart';
 import '../../../../shared/widgets/dashed_rect_painter.dart';
 import 'widgets/split_sections.dart';
-import '../../../../core/utils/throttler.dart';
 final groupProfilesProvider = FutureProvider.autoDispose
     .family<List<Profile>, String>((ref, groupId) async {
       final repo = ref.watch(groupRepositoryProvider);
@@ -74,7 +73,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final _amountCtrl = TextEditingController();
   late final TextEditingController _dateCtrl;
   DateTime _selectedDate = DateTime.now();
-  final _throttler = Throttler();
 
   @override
   void initState() {
@@ -90,7 +88,6 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     _descCtrl.dispose();
     _amountCtrl.dispose();
     _dateCtrl.dispose();
-    _throttler.dispose();
     super.dispose();
   }
 
@@ -657,14 +654,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               child: ElevatedButton(
                 onPressed: state.isLoading
                     ? null
-                    : () {
-                        _throttler.run(() {
-                          notifier.submitExpense(
-                            groupId: widget.group?.id,
-                            date: _selectedDate,
-                          );
-                        });
-                      },
+                    : () => notifier.submitExpense(
+                        groupId: widget.group?.id,
+                        date: _selectedDate,
+                      ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.textPrimary,
                   foregroundColor: AppColors.surface,

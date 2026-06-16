@@ -3,7 +3,7 @@ import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:sqflite_sqlcipher/sqflite.dart';
+import 'package:sqflite/sqflite.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../app/constants/app_constants.dart';
 import '../../../core/utils/row_helpers.dart';

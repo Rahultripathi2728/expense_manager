@@ -8,24 +8,6 @@ import 'app/theme/theme_provider.dart';
 import 'app/router/app_router.dart';
 import 'core/services/cache_service.dart';
 
-import 'package:workmanager/workmanager.dart';
-import 'core/services/sync_service.dart';
-
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    try {
-      final container = ProviderContainer();
-      final syncService = container.read(syncServiceProvider);
-      await syncService.syncPendingItems();
-      return true;
-    } catch (e) {
-      debugPrint('Background Sync Error: $e');
-      return false;
-    }
-  });
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -37,21 +19,9 @@ void main() async {
 
   // Catch asynchronous errors
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('Async Error: $error\n$stack');
+    debugPrint('Async Error: \$error\\n\$stack');
     return true;
   };
-
-  if (!kIsWeb) {
-    Workmanager().initialize(callbackDispatcher);
-    Workmanager().registerPeriodicTask(
-      '1',
-      'offlineSyncTask',
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-      ),
-    );
-  }
 
   final prefs = await SharedPreferences.getInstance();
 
