@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart' as cipher;
@@ -36,6 +37,24 @@ class DatabaseHelper {
       final dbPath = await getDatabasesPath();
       final path = join(dbPath, filePath);
 
+      bool isUnencrypted = false;
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          final bytes = await file.openRead(0, 16).first;
+          final header = String.fromCharCodes(bytes);
+          if (header.startsWith('SQLite format 3')) {
+            isUnencrypted = true;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error checking DB encryption: $e');
+      }
+
+      if (isUnencrypted) {
+        await _migrateToEncrypted(path);
+      }
+
       return await cipher.openDatabase(
         path,
         password: AppConstants.localDbEncryptionKey,
@@ -44,6 +63,52 @@ class DatabaseHelper {
         onUpgrade: _upgradeDB,
       );
     }
+  }
+
+  Future<void> _migrateToEncrypted(String path) async {
+    debugPrint('Migrating unencrypted database to encrypted...');
+    final oldPath = '${path}_old';
+    
+    final oldFile = File(path);
+    await oldFile.rename(oldPath);
+
+    final oldDb = await cipher.openDatabase(oldPath, password: '');
+    
+    final newDb = await cipher.openDatabase(
+      path,
+      password: AppConstants.localDbEncryptionKey,
+      version: 2,
+      onCreate: _createDB,
+    );
+
+    final tables = ['expenses', 'groups', 'group_members', 'settlements', 'sync_queue'];
+    for (final table in tables) {
+      try {
+        final rows = await oldDb.query(table);
+        if (rows.isNotEmpty) {
+          final batch = newDb.batch();
+          for (final row in rows) {
+            batch.insert(table, row);
+          }
+          await batch.commit(noResult: true);
+        }
+      } catch (e) {
+        debugPrint('Error migrating table $table: $e');
+      }
+    }
+
+    await oldDb.close();
+    await newDb.close();
+
+    try {
+      await File(oldPath).delete();
+      final oldJournal = File('$oldPath-journal');
+      if (await oldJournal.exists()) await oldJournal.delete();
+      final oldWal = File('$oldPath-wal');
+      if (await oldWal.exists()) await oldWal.delete();
+    } catch (_) {}
+
+    debugPrint('Migration complete.');
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
