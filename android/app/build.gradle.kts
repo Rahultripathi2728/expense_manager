@@ -46,8 +46,12 @@ android {
 
     buildTypes {
         release {
-            // Signing with the release keys
-            signingConfig = signingConfigs.getByName("release")
+            // Signing with the release keys locally, fallback to debug on CI
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }
