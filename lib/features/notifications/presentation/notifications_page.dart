@@ -7,6 +7,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../auth/data/auth_repository.dart';
 import '../data/notification_repository.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 
 class NotificationsPage extends ConsumerWidget {
   const NotificationsPage({super.key});
@@ -63,7 +64,7 @@ class NotificationsPage extends ConsumerWidget {
         ],
       ),
       body: notificationsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Padding(padding: EdgeInsets.all(AppSpacing.lg), child: SkeletonList(itemCount: 5)),
         error: (e, _) => Center(
           child: Text(
             'Error loading notifications',

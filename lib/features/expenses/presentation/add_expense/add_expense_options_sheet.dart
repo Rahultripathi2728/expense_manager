@@ -5,7 +5,8 @@ import '../../../groups/data/group_repository.dart';
 import 'add_expense_screen.dart';
 
 class AddExpenseOptionsSheet extends ConsumerWidget {
-  const AddExpenseOptionsSheet({super.key});
+  final DateTime? initialDate;
+  const AddExpenseOptionsSheet({super.key, this.initialDate});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -96,7 +97,7 @@ class AddExpenseOptionsSheet extends ConsumerWidget {
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) =>
-                                      AddExpenseScreen(group: group),
+                                      AddExpenseScreen(group: group, initialDate: initialDate),
                                 ),
                               );
                             },
@@ -161,7 +162,7 @@ class AddExpenseOptionsSheet extends ConsumerWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AddExpenseScreen(group: null),
+                      builder: (_) => AddExpenseScreen(group: null, initialDate: initialDate),
                     ),
                   );
                 },

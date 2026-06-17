@@ -11,6 +11,7 @@ import '../../../core/utils/row_helpers.dart';
 import '../../expenses/presentation/add_expense/add_expense_screen.dart'; // for groupProfilesProvider
 import '../domain/group_model.dart';
 import '../domain/group_member_model.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../data/group_repository.dart';
 import '../../auth/data/auth_repository.dart';
 
@@ -63,7 +64,7 @@ class GroupDetailPage extends ConsumerWidget {
       ),
       body: groupAsync.when(
         loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.textPrimary)),
+            const Padding(padding: EdgeInsets.all(AppSpacing.lg), child: SkeletonGroupList(itemCount: 1)),
         error: (err, _) => Center(
           child: Text(
             'Error loading group: $err',
@@ -175,8 +176,9 @@ class GroupDetailPage extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.md),
 
                 profilesAsync.when(
-                  loading: () => Center(
-                    child: CircularProgressIndicator(color: AppColors.textPrimary),
+                  loading: () => const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: SkeletonList(itemCount: 3),
                   ),
                   error: (err, _) => Text(
                     'Error loading members: $err',

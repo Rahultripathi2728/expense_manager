@@ -205,12 +205,12 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
   }
 
   Future<void> signIn({required String email, required String password}) async {
-    state = const AsyncValue.loading();
     try {
       final user = await _repo.signIn(email: email, password: password);
       state = AsyncValue.data(user);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (e) {
+      // Do not set error globally here to avoid destructive router redirects
+      // the UI handles displaying the error string.
       rethrow;
     }
   }
@@ -220,7 +220,6 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     required String email,
     required String password,
   }) async {
-    state = const AsyncValue.loading();
     try {
       final user = await _repo.signUp(
         name: name,
@@ -228,8 +227,9 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
         password: password,
       );
       state = AsyncValue.data(user);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
+    } catch (e) {
+      // Do not set error globally here to avoid destructive router redirects
+      // the UI handles displaying the error string.
       rethrow;
     }
   }

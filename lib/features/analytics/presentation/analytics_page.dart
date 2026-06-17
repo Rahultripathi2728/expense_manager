@@ -6,6 +6,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/services/categorize_service.dart';
 import '../../../shared/widgets/animation_helpers.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../expenses/data/expense_repository.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../../core/utils/date_helpers.dart';
@@ -27,7 +28,7 @@ class AnalyticsPage extends ConsumerWidget {
       backgroundColor: AppColors.background,
       body: expensesAsync.when(
         loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.textPrimary)),
+            const Padding(padding: EdgeInsets.all(AppSpacing.lg), child: SkeletonList(itemCount: 3)),
         error: (err, _) => Center(
           child: Text('Error: $err', style: const TextStyle(color: Colors.red)),
         ),

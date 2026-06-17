@@ -7,6 +7,7 @@ import '../../auth/data/auth_repository.dart';
 import '../data/profile_repository.dart';
 import '../../update/data/update_service.dart';
 import '../../update/presentation/update_dialog.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -64,7 +65,7 @@ class ProfilePage extends ConsumerWidget {
 
 
             profileAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const SkeletonExpenseCard(),
               error: (e, _) => const SizedBox(),
               data: (profile) => _SettingsTile(
                 icon: Icons.account_balance_wallet,

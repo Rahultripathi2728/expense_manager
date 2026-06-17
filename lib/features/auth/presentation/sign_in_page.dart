@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/utils/error_formatter.dart';
+import '../../../core/utils/throttler.dart';
 import '../data/auth_repository.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
@@ -20,10 +22,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   bool _loading = false;
   String? _error;
 
+  final _throttler = Throttler();
+
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _throttler.dispose();
     super.dispose();
   }
 
@@ -39,7 +44,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           .read(authStateProvider.notifier)
           .signIn(email: _emailCtrl.text.trim(), password: _passwordCtrl.text);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = ErrorFormatter.format(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -318,7 +323,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                onPressed: _loading ? null : _signIn,
+                                onPressed: _loading ? null : () => _throttler.run(_signIn),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.textPrimary,
                                   foregroundColor: AppColors.surface,

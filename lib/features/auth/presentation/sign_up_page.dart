@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../core/utils/error_formatter.dart';
+import '../../../core/utils/throttler.dart';
 import '../data/auth_repository.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
@@ -21,11 +23,14 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
   bool _loading = false;
   String? _error;
 
+  final _throttler = Throttler();
+
   @override
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
+    _throttler.dispose();
     super.dispose();
   }
 
@@ -45,7 +50,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
             password: _passwordCtrl.text,
           );
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = ErrorFormatter.format(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -347,7 +352,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                onPressed: _loading ? null : _signUp,
+                                onPressed: _loading ? null : () => _throttler.run(_signUp),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.textPrimary,
                                   foregroundColor: AppColors.surface,

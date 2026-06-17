@@ -216,9 +216,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                       skipLoadingOnReload: true,
                       skipLoadingOnRefresh: true,
                       data: (expenses) {
-                        return AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: GridView.builder(
+                        return Column(
+                          children: [
+
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              child: GridView.builder(
                             key: ValueKey<int>(currentMonth.month + currentMonth.year * 12),
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
@@ -241,6 +244,9 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               final isToday = DateHelpers.isSameDay(cellDate, today);
                               final isSelected = DateHelpers.isSameDay(cellDate, _selectedDate);
                               final dayExpenses = expenses.where((e) => DateHelpers.isSameDay(e.expenseDate, cellDate)).toList();
+                              if (dayExpenses.isNotEmpty) {
+                                // print removed
+                              }
                               final totalSpent = dayExpenses.fold<double>(0, (sum, e) => sum + e.amount);
                               final Set<Color> dotColors = {};
                               for (var e in dayExpenses) {
@@ -272,7 +278,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                       ),
                                       if (isSelected && totalSpent > 0) ...[
                                         const SizedBox(height: 2),
-                                        Text('?${totalSpent.round()}', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                                        Text('₹${totalSpent.round()}', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                                       ],
                                       if (dotColors.isNotEmpty) ...[
                                         const SizedBox(height: 3),
@@ -291,6 +297,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               );
                             },
                           ),
+                        ),
+                          ],
                         );
                       },
                       loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
@@ -332,7 +340,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                       ),
                       GestureDetector(
                         onTap: () {
-                          showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useRootNavigator: true, builder: (_) => const AddExpenseOptionsSheet());
+                          showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, useRootNavigator: true, builder: (_) => AddExpenseOptionsSheet(initialDate: _selectedDate));
                         },
                         child: Container(
                           width: 44, height: 44, decoration: BoxDecoration(color: AppColors.textPrimary, borderRadius: BorderRadius.circular(12)),

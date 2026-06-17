@@ -7,6 +7,7 @@ import 'app/theme/app_theme.dart';
 import 'app/theme/theme_provider.dart';
 import 'app/router/app_router.dart';
 import 'core/services/cache_service.dart';
+import 'core/services/realtime_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +41,7 @@ class ExpenseManagerApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
+    ref.watch(realtimeInitProvider); // Keep realtime connection alive
 
     return MaterialApp.router(
       title: 'Expense Manager',
@@ -58,37 +60,31 @@ class ExpenseManagerApp extends ConsumerWidget {
               child: Stack(
                 children: [
                   if (child != null) child,
-                  if (isOffline)
-                    Positioned(
-                      top: 40,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
+                    if (isOffline)
+                      Positioned.fill(
                         child: Material(
-                          color: Colors.transparent,
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          child: const Center(
+                            child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
-                                SizedBox(width: 8),
+                                Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 64),
+                                SizedBox(height: 16),
                                 Text(
-                                  'Offline Mode',
-                                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                  'You are offline',
+                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Please connect to the internet to use Expense Manager.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 16, color: Colors.grey),
                                 ),
                               ],
                             ),
                           ),
                         ),
                       ),
-                    ),
                 ],
               ),
             );

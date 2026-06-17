@@ -18,6 +18,7 @@ import '../../expenses/domain/expense_split_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
+import '../../../shared/widgets/skeleton_loading_card.dart';
 
 final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
   ref,
@@ -172,7 +173,7 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
       ),
       body: groupsAsync.when(
         loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.textPrimary)),
+            const Padding(padding: EdgeInsets.all(AppSpacing.lg), child: SkeletonGroupList(itemCount: 3)),
         error: (e, _) => CustomErrorWidget(
           error: e,
           onRetry: () => ref.refresh(userGroupsProvider),
@@ -308,13 +309,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                           child: ref
                             .watch(groupBalancesProvider(selectedGroupId!))
                             .when(
-                              loading: () => Padding(
-                                padding: const EdgeInsets.only(top: 40),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
+                              loading: () => const Padding(
+                                padding: EdgeInsets.only(top: 40),
+                                child: SkeletonList(itemCount: 3),
                               ),
                               error: (err, _) => CustomErrorWidget(
                                 error: err,

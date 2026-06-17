@@ -25,6 +25,19 @@ class ProfileRepository {
     }
   }
 
+  Future<List<Profile>> getProfiles(List<String> userIds) async {
+    try {
+      final res = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        queries: [Query.equal('userId', userIds)],
+      );
+      return res.rows.map((d) => Profile.fromMap(d.dataWithId)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<Profile> updateProfile(Profile profile) async {
     final res = await _tablesDB.updateRow(
       databaseId: AppConstants.databaseId,

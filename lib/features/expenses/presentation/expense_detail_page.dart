@@ -5,9 +5,12 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
+import '../../../core/utils/error_formatter.dart';
+import '../../../core/utils/throttler.dart';
 import '../domain/expense_model.dart';
 import '../data/expense_repository.dart';
 import '../../calendar/presentation/widgets/calendar_expense_card.dart'; // For group/profile providers
+import 'add_expense/add_expense_screen.dart';
 
 class ExpenseDetailPage extends ConsumerStatefulWidget {
   final Expense expense;
@@ -19,6 +22,13 @@ class ExpenseDetailPage extends ConsumerStatefulWidget {
 
 class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
   bool isDeleting = false;
+  final _throttler = Throttler();
+
+  @override
+  void dispose() {
+    _throttler.dispose();
+    super.dispose();
+  }
 
   void _deleteExpense() async {
     final confirm = await showDialog<bool>(
@@ -69,7 +79,7 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete: $e'),
+            content: Text('Failed to delete: ${ErrorFormatter.format(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -103,15 +113,21 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
         actions: [
           IconButton(
             icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Editing existing expenses will be supported in a future update.',
+            onPressed: () => _throttler.run(() async {
+              final group = expense.isGroup && expense.groupId != null
+                  ? await ref.read(groupByIdProvider(expense.groupId!).future)
+                  : null;
+              
+              if (!mounted) return;
+              if (context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AddExpenseScreen(group: group, existingExpense: expense),
                   ),
-                ),
-              );
-            },
+                );
+              }
+            }),
           ),
           if (isDeleting)
             Padding(

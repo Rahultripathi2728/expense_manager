@@ -11,6 +11,7 @@ import '../../../groups/data/group_repository.dart';
 import '../../../profile/domain/profile_model.dart';
 import '../../../profile/data/profile_repository.dart';
 import '../../../auth/data/auth_repository.dart';
+import '../../domain/expense_model.dart';
 import '../../data/expense_repository.dart';
 import 'providers/add_expense_provider.dart';
 import '../../../../shared/services/categorize_service.dart';
@@ -61,8 +62,10 @@ final groupProfilesProvider = FutureProvider.autoDispose
 
 class AddExpenseScreen extends ConsumerStatefulWidget {
   final Group? group;
+  final Expense? existingExpense;
+  final DateTime? initialDate;
 
-  const AddExpenseScreen({super.key, required this.group});
+  const AddExpenseScreen({super.key, required this.group, this.existingExpense, this.initialDate});
 
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -77,6 +80,14 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.existingExpense != null) {
+      _selectedDate = widget.existingExpense!.expenseDate;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(addExpenseProvider(widget.group?.id).notifier).initializeWithExpense(widget.existingExpense!);
+      });
+    } else if (widget.initialDate != null) {
+      _selectedDate = widget.initialDate!;
+    }
     _dateCtrl = TextEditingController(text: _formatDate(_selectedDate));
   }
 
@@ -197,8 +208,11 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
         ref.invalidate(monthlyExpensesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Expense added successfully!'),
-            backgroundColor: AppColors.textPrimary,
+            content: Text(
+              widget.existingExpense != null ? 'Expense updated successfully!' : 'Expense added successfully!',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.green,
           ),
         );
         Navigator.pop(context);
@@ -207,7 +221,10 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           next.errorMessage != prev?.errorMessage) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(next.errorMessage!),
+            content: Text(
+              next.errorMessage!,
+              style: TextStyle(color: AppColors.surface),
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -224,7 +241,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         title: Text(
-          'Add Expense',
+          widget.existingExpense != null ? 'Edit Expense' : 'Add Expense',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
         leading: IconButton(
@@ -675,9 +692,9 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                           strokeWidth: 2,
                         ),
                       )
-                    : const Text(
-                        'Submit expense',
-                        style: TextStyle(
+                    : Text(
+                        widget.existingExpense != null ? 'Update expense' : 'Submit expense',
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),

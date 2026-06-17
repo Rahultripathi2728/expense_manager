@@ -5,6 +5,8 @@ import 'package:expense_manager/features/expenses/presentation/add_expense/add_e
 import 'package:expense_manager/features/profile/data/profile_repository.dart';
 import 'package:expense_manager/features/profile/domain/profile_model.dart';
 import 'package:expense_manager/shared/services/categorize_service.dart';
+import 'package:expense_manager/features/expenses/domain/expense_model.dart';
+import 'package:expense_manager/core/utils/error_formatter.dart';
 
 class ItemSplitState {
   final String description;
@@ -115,8 +117,59 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
   final Ref _ref;
   final String? _groupId;
 
+  Expense? _existingExpense;
+
   AddExpenseNotifier(this._ref, this._groupId) : super(AddExpenseState()) {
     _initMembers();
+  }
+
+  Future<void> initializeWithExpense(Expense expense) async {
+    _existingExpense = expense;
+    state = state.copyWith(isLoading: true);
+    try {
+      final repo = _ref.read(expenseRepositoryProvider);
+      final splits = await repo.getExpenseSplits(expense.id);
+      final items = await repo.getExpenseItems(expense.id);
+
+      List<String> selectedMemberIds = [];
+      Map<String, double> unequalAmounts = {};
+      List<ItemSplitState> itemStates = [];
+
+      if (expense.splitType == 'equal') {
+        selectedMemberIds = splits.where((s) => s.isIncluded).map((s) => s.userId).toList();
+      } else if (expense.splitType == 'unequal') {
+        for (final s in splits) {
+          unequalAmounts[s.userId] = s.amountOwed;
+        }
+      } else if (expense.splitType == 'itemwise') {
+        itemStates = items.map((item) {
+          return ItemSplitState(
+            description: item.itemName,
+            qty: 1, // qty is not natively stored in appwrite currently, so we default to 1
+            price: item.itemAmount,
+            participantIds: item.participants,
+          );
+        }).toList();
+      }
+
+      final initialBill = SingleBillState(
+        description: expense.description,
+        amount: expense.amount,
+        category: expense.category,
+        splitType: expense.splitType ?? 'equal',
+        selectedMemberIds: selectedMemberIds,
+        unequalAmounts: unequalAmounts,
+        items: itemStates,
+      );
+
+      state = state.copyWith(
+        bills: [initialBill],
+        activeBillIndex: 0,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(errorMessage: 'Failed to load expense details: $e', isLoading: false);
+    }
   }
 
   Future<void> _initMembers() async {
@@ -124,15 +177,19 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
       if (_groupId == null) {
         final user = _ref.read(authStateProvider).valueOrNull;
         if (user != null) {
-          final initialBill = SingleBillState(
-            selectedMemberIds: [user.id],
-            unequalAmounts: {user.id: 0.0},
-          );
-          state = state.copyWith(
-            allMemberIds: [user.id],
-            bills: [initialBill],
-            activeBillIndex: 0,
-          );
+          if (state.bills.isEmpty) {
+            final initialBill = SingleBillState(
+              selectedMemberIds: [user.id],
+              unequalAmounts: {user.id: 0.0},
+            );
+            state = state.copyWith(
+              allMemberIds: [user.id],
+              bills: [initialBill],
+              activeBillIndex: 0,
+            );
+          } else {
+             state = state.copyWith(allMemberIds: [user.id]);
+          }
         }
       } else {
         // Fetch group members profiles using future
@@ -140,15 +197,20 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
           groupProfilesProvider(_groupId).future,
         );
         final ids = profiles.map((p) => p.userId).toList();
-        final initialBill = SingleBillState(
-          selectedMemberIds: ids,
-          unequalAmounts: {for (var id in ids) id: 0.0},
-        );
-        state = state.copyWith(
-          allMemberIds: ids,
-          bills: [initialBill],
-          activeBillIndex: 0,
-        );
+        
+        if (state.bills.isEmpty) {
+          final initialBill = SingleBillState(
+            selectedMemberIds: ids,
+            unequalAmounts: {for (var id in ids) id: 0.0},
+          );
+          state = state.copyWith(
+            allMemberIds: ids,
+            bills: [initialBill],
+            activeBillIndex: 0,
+          );
+        } else {
+           state = state.copyWith(allMemberIds: ids);
+        }
       }
     } catch (e) {
       state = state.copyWith(errorMessage: 'Failed to initialize members: $e');
@@ -415,14 +477,23 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
       final repo = _ref.read(expenseRepositoryProvider);
       for (final bill in state.bills) {
         if (groupId == null) {
-          // Outside groups: Create a personal expense
-          await repo.createPersonalExpense(
-            userId: user.id,
-            description: bill.description,
-            amount: bill.amount,
-            category: bill.category,
-            date: date ?? DateTime.now(),
-          );
+          if (_existingExpense != null) {
+            await repo.updatePersonalExpense(
+              expenseId: _existingExpense!.id,
+              description: bill.description,
+              amount: bill.amount,
+              category: bill.category,
+              date: date ?? DateTime.now(),
+            );
+          } else {
+            await repo.createPersonalExpense(
+              userId: user.id,
+              description: bill.description,
+              amount: bill.amount,
+              category: bill.category,
+              date: date ?? DateTime.now(),
+            );
+          }
         } else {
           // Group Expense: Construct splits and items depending on split type
           List<Map<String, dynamic>> splitsPayload = [];
@@ -481,17 +552,30 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
                 .toList();
           }
 
-          await repo.createGroupExpense(
-            groupId: groupId,
-            userId: user.id,
-            description: bill.description,
-            amount: bill.amount,
-            category: bill.category,
-            splitType: bill.splitType,
-            splits: splitsPayload,
-            items: itemsPayload,
-            date: date,
-          );
+          if (_existingExpense != null) {
+            await repo.updateGroupExpense(
+              expenseId: _existingExpense!.id,
+              description: bill.description,
+              amount: bill.amount,
+              category: bill.category,
+              splitType: bill.splitType,
+              splits: splitsPayload,
+              items: itemsPayload,
+              date: date,
+            );
+          } else {
+            await repo.createGroupExpense(
+              groupId: groupId,
+              userId: user.id,
+              description: bill.description,
+              amount: bill.amount,
+              category: bill.category,
+              splitType: bill.splitType,
+              splits: splitsPayload,
+              items: itemsPayload,
+              date: date,
+            );
+          }
         }
       }
 
@@ -501,7 +585,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
       // print(stack);
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Failed to add expense: $e',
+        errorMessage: 'Failed to add expense: ${ErrorFormatter.format(e)}',
       );
     }
   }

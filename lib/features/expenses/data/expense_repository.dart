@@ -2,24 +2,19 @@ import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../app/constants/app_constants.dart';
-import '../../../core/utils/row_helpers.dart';
 import '../domain/expense_model.dart';
 import '../domain/expense_split_model.dart';
+import '../domain/expense_item_model.dart';
+import '../../../core/utils/row_helpers.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../groups/data/group_repository.dart';
 import '../../../core/utils/date_helpers.dart';
-import '../../../core/local_db/database_helper.dart';
-import '../../../core/services/sync_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:sqflite/sqflite.dart';
 
 class ExpenseRepository {
   final TablesDB _tablesDB;
-  final SyncService _syncService;
-  final DatabaseHelper _dbHelper;
 
-  ExpenseRepository(this._tablesDB, this._syncService, this._dbHelper);
+  ExpenseRepository(this._tablesDB);
 
   Future<Expense> createPersonalExpense({
     required String userId,
@@ -40,30 +35,18 @@ class ExpenseRepository {
       'isSettled': true,
     };
 
-    if (kIsWeb) {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        throw Exception('No internet connection. Please connect to the internet to add an expense.');
-      }
-      final doc = await _tablesDB.createRow(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        rowId: expenseId,
-        data: data,
-      );
-      return Expense.fromMap(doc.dataWithId);
-    } else {
-      final expense = Expense.fromMap({'\$id': expenseId, ...data});
-
-      // 1. Save to Local DB
-      final db = await _dbHelper.database;
-      await db.insert('expenses', {'id': expenseId, ...data});
-
-      // 2. Queue for Sync
-      await _syncService.queueAction('create', 'expenses', data, documentId: expenseId);
-
-      return expense;
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection. Please connect to the internet to add an expense.');
     }
+    
+    final doc = await _tablesDB.createRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      rowId: expenseId,
+      data: data,
+    );
+    return Expense.fromMap(doc.dataWithId);
   }
 
   Future<Expense> createGroupExpense({
@@ -94,173 +77,261 @@ class ExpenseRepository {
       'isSettled': false,
     };
 
-    if (kIsWeb) {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        throw Exception('No internet connection. Please connect to the internet to add an expense.');
-      }
-      final doc = await _tablesDB.createRow(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        rowId: expenseId,
-        data: expenseData,
-      );
-      return Expense.fromMap(doc.dataWithId);
-    } else {
-      final expense = Expense.fromMap({'\$id': expenseId, ...expenseData});
+    // Prepare splits
+    final preparedSplits = splits.map((s) {
+      final splitId = ID.unique();
+      return {
+        'id': splitId,
+        'expenseId': expenseId,
+        'userId': s['userId'],
+        'amountOwed': s['amountOwed'],
+        'isIncluded': s['isIncluded'] ?? true,
+      };
+    }).toList();
 
-      // 1. Save to Local DB
-      final db = await _dbHelper.database;
-      await db.insert('expenses', {'id': expenseId, ...expenseData});
+    // Prepare items
+    final preparedItems = (items ?? []).map((i) {
+      final itemId = ID.unique();
+      return {
+        'id': itemId,
+        'expenseId': expenseId,
+        'itemName': i['itemName'],
+        'itemAmount': i['itemAmount'],
+        'participants': i['participants'],
+      };
+    }).toList();
 
-      // 2. Queue the appwrite function payload
-      // We queue a special action for group expenses to be handled by sync service
-      // For now, to keep it simple, we will just call the function directly. If offline, it fails.
-      // True offline group expenses with cloud functions is complex. We will queue it as a normal document creation.
-      await _syncService.queueAction('create', 'expenses', expenseData, documentId: expenseId);
-
-      return expense;
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection. Please connect to the internet to add an expense.');
     }
-  }
-
-  Future<void> _syncExpensesFromRemote(String userId, DateTime month) async {
+    
+    final doc = await _tablesDB.createRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      rowId: expenseId,
+      data: expenseData,
+    );
+    
+    for (final split in preparedSplits) {
+      final data = Map<String, dynamic>.from(split)..remove('id');
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseSplitsCollection,
+        rowId: split['id'],
+        data: data,
+      );
+    }
+    for (final item in preparedItems) {
+      final data = Map<String, dynamic>.from(item)..remove('id');
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseItemsCollection,
+        rowId: item['id'],
+        data: data,
+      );
+    }
+    
+    // Create notifications for other users
+    String creatorName = 'A group member';
     try {
-      final start = DateHelpers.startOfMonth(month);
-      final end = DateHelpers.endOfMonth(month);
-
-      final res = await _tablesDB.listRows(
+      final profileRes = await _tablesDB.listRows(
         databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        queries: [
-          Query.equal('userId', userId),
-          Query.greaterThanEqual('expenseDate', start.toIso8601String()),
-          Query.lessThanEqual('expenseDate', end.toIso8601String()),
-          Query.orderDesc('expenseDate'),
-          Query.limit(AppConstants.maxPageSize),
-        ],
+        tableId: AppConstants.profilesCollection,
+        queries: [Query.equal('\$id', userId)],
       );
-
-      final db = await _dbHelper.database;
-      for (final doc in res.rows) {
-        final expense = Expense.fromMap(doc.dataWithId);
-        final data = expense.toMap();
-        data['id'] = expense.id;
-        data['isSettled'] = expense.isSettled ? 1 : 0; // Ensure int conversion for SQLite
-        await db.insert('expenses', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      if (profileRes.rows.isNotEmpty) {
+        creatorName = profileRes.rows.first.data['name'] ?? 'A group member';
       }
-    } catch (e) {
-      // Offline, ignore
+    } catch (_) {}
+
+    for (final split in preparedSplits) {
+      if (split['userId'] != userId && split['isIncluded'] == true) {
+        final notifId = ID.unique();
+        await _tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.notificationsCollection,
+          rowId: notifId,
+          data: {
+            'userId': split['userId'],
+            'type': 'expense_added',
+            'title': 'New Group Expense',
+            'body': '$creatorName added "$description" (${amount.toStringAsFixed(0)})',
+            'isRead': false,
+            'createdAt': createdAt,
+          },
+        );
+      }
     }
+    
+    return Expense.fromMap(doc.dataWithId);
   }
+
+  Future<Expense> updatePersonalExpense({
+    required String expenseId,
+    required String description,
+    required double amount,
+    required String category,
+    DateTime? date,
+  }) async {
+    final expenseDate = (date ?? DateTime.now()).toIso8601String();
+    
+    final data = {
+      'description': description,
+      'amount': amount,
+      'category': category,
+      'expenseDate': expenseDate,
+    };
+
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection.');
+    }
+    
+    final doc = await _tablesDB.updateRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      rowId: expenseId,
+      data: data,
+    );
+    return Expense.fromMap(doc.dataWithId);
+  }
+
+  Future<Expense> updateGroupExpense({
+    required String expenseId,
+    required String description,
+    required double amount,
+    required String category,
+    required String splitType,
+    required List<Map<String, dynamic>> splits,
+    List<Map<String, dynamic>>? items,
+    DateTime? date,
+  }) async {
+    final expenseDate = (date ?? DateTime.now()).toIso8601String();
+    
+    final expenseData = {
+      'description': description,
+      'amount': amount,
+      'category': category,
+      'splitType': splitType,
+      'expenseDate': expenseDate,
+    };
+
+    // Prepare splits
+    final preparedSplits = splits.map((s) {
+      final splitId = ID.unique();
+      return {
+        'id': splitId,
+        'expenseId': expenseId,
+        'userId': s['userId'],
+        'amountOwed': s['amountOwed'],
+        'isIncluded': s['isIncluded'] ?? true,
+      };
+    }).toList();
+
+    // Prepare items
+    final preparedItems = (items ?? []).map((i) {
+      final itemId = ID.unique();
+      return {
+        'id': itemId,
+        'expenseId': expenseId,
+        'itemName': i['itemName'],
+        'itemAmount': i['itemAmount'],
+        'participants': i['participants'],
+      };
+    }).toList();
+
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection.');
+    }
+    
+    final doc = await _tablesDB.updateRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      rowId: expenseId,
+      data: expenseData,
+    );
+    
+    final existingSplits = await _tablesDB.listRows(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expenseSplitsCollection,
+      queries: [Query.equal('expenseId', expenseId)],
+    );
+    for (final s in existingSplits.rows) {
+      await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseSplitsCollection, rowId: s.$id);
+    }
+    for (final split in preparedSplits) {
+      final data = Map<String, dynamic>.from(split)..remove('id');
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseSplitsCollection,
+        rowId: split['id'],
+        data: data,
+      );
+    }
+
+    final existingItems = await _tablesDB.listRows(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expenseItemsCollection,
+      queries: [Query.equal('expenseId', expenseId)],
+    );
+    for (final i in existingItems.rows) {
+      await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseItemsCollection, rowId: i.$id);
+    }
+    for (final item in preparedItems) {
+      final data = Map<String, dynamic>.from(item)..remove('id');
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseItemsCollection,
+        rowId: item['id'],
+        data: data,
+      );
+    }
+
+    return Expense.fromMap(doc.dataWithId);
+  }
+
 
   Future<List<Expense>> getExpensesForMonth(String userId, DateTime month) async {
     final start = DateHelpers.startOfMonth(month);
     final end = DateHelpers.endOfMonth(month);
 
-    if (kIsWeb) {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        throw Exception('No internet connection.');
-      }
-      final res = await _tablesDB.listRows(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        queries: [
-          Query.equal('userId', userId),
-          Query.greaterThanEqual('expenseDate', start.toIso8601String()),
-          Query.lessThanEqual('expenseDate', end.toIso8601String()),
-          Query.orderDesc('expenseDate'),
-          Query.limit(AppConstants.maxPageSize),
-        ],
-      );
-      return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
-    } else {
-      // 1. Fetch from local DB
-      final db = await _dbHelper.database;
-      var res = await db.query(
-        'expenses',
-        where: 'userId = ? AND expenseDate >= ? AND expenseDate <= ?',
-        whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
-        orderBy: 'expenseDate DESC',
-      );
-
-      if (res.isEmpty) {
-        // Wait for sync if empty
-        await _syncExpensesFromRemote(userId, month);
-        res = await db.query(
-          'expenses',
-          where: 'userId = ? AND expenseDate >= ? AND expenseDate <= ?',
-          whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
-          orderBy: 'expenseDate DESC',
-        );
-      } else {
-        // Sync in background
-        _syncExpensesFromRemote(userId, month);
-      }
-
-      return res.map((map) {
-        final m = Map<String, dynamic>.from(map);
-        m['\$id'] = m['id'];
-        m['isSettled'] = m['isSettled'] == 1; // SQLite bool conversion
-        return Expense.fromMap(m);
-      }).toList();
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection.');
     }
+    
+    final res = await _tablesDB.listRows(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      queries: [
+        Query.equal('userId', userId),
+        Query.greaterThanEqual('expenseDate', start.toIso8601String()),
+        Query.lessThanEqual('expenseDate', end.toIso8601String()),
+        Query.orderDesc('expenseDate'),
+        Query.limit(AppConstants.maxPageSize),
+      ],
+    );
+    return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
   }
 
   Future<List<Expense>> getGroupExpenses(String groupId) async {
-    if (kIsWeb) {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        throw Exception('No internet connection.');
-      }
-      final res = await _tablesDB.listRows(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        queries: [
-          Query.equal('groupId', groupId),
-          Query.orderDesc('expenseDate'),
-          Query.limit(AppConstants.maxPageSize),
-        ],
-      );
-      return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
-    } else {
-      try {
-        final res = await _tablesDB.listRows(
-          databaseId: AppConstants.databaseId,
-          tableId: AppConstants.expensesCollection,
-          queries: [
-            Query.equal('groupId', groupId),
-            Query.orderDesc('expenseDate'),
-            Query.limit(AppConstants.maxPageSize),
-          ],
-        );
-        final db = await _dbHelper.database;
-        for (final doc in res.rows) {
-          final expense = Expense.fromMap(doc.dataWithId);
-          final data = expense.toMap();
-          data['id'] = expense.id;
-          data['isSettled'] = expense.isSettled ? 1 : 0;
-          await db.insert('expenses', data, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      } catch (e) {
-        // Offline, continue
-      }
-
-      final db = await _dbHelper.database;
-      final localRes = await db.query(
-        'expenses',
-        where: 'groupId = ?',
-        whereArgs: [groupId],
-        orderBy: 'expenseDate DESC',
-      );
-
-      return localRes.map((map) {
-        final m = Map<String, dynamic>.from(map);
-        m['\$id'] = m['id'];
-        m['isSettled'] = m['isSettled'] == 1;
-        return Expense.fromMap(m);
-      }).toList();
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection.');
     }
+    
+    final res = await _tablesDB.listRows(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      queries: [
+        Query.equal('groupId', groupId),
+        Query.orderDesc('expenseDate'),
+        Query.limit(AppConstants.maxPageSize),
+      ],
+    );
+    return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
   }
 
   Future<List<ExpenseSplit>> getExpenseSplits(String expenseId) async {
@@ -271,6 +342,19 @@ class ExpenseRepository {
         queries: [Query.equal('expenseId', expenseId)],
       );
       return res.rows.map((d) => ExpenseSplit.fromMap(d.dataWithId)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<ExpenseItem>> getExpenseItems(String expenseId) async {
+    try {
+      final res = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseItemsCollection,
+        queries: [Query.equal('expenseId', expenseId)],
+      );
+      return res.rows.map((d) => ExpenseItem.fromMap(d.dataWithId)).toList();
     } catch (_) {
       return [];
     }
@@ -293,29 +377,42 @@ class ExpenseRepository {
   }
 
   Future<void> deleteExpense(String expenseId) async {
-    if (kIsWeb) {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult.contains(ConnectivityResult.none)) {
-        throw Exception('No internet connection. Please connect to the internet to delete an expense.');
-      }
-      await _tablesDB.deleteRow(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.expensesCollection,
-        rowId: expenseId,
-      );
-    } else {
-      final db = await _dbHelper.database;
-      await db.delete('expenses', where: 'id = ?', whereArgs: [expenseId]);
-      await _syncService.queueAction('delete', 'expenses', null, documentId: expenseId);
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection. Please connect to the internet to delete an expense.');
     }
+    
+    try {
+      final existingSplits = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseSplitsCollection,
+        queries: [Query.equal('expenseId', expenseId)],
+      );
+      for (final s in existingSplits.rows) {
+        await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseSplitsCollection, rowId: s.$id);
+      }
+
+      final existingItems = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseItemsCollection,
+        queries: [Query.equal('expenseId', expenseId)],
+      );
+      for (final i in existingItems.rows) {
+        await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseItemsCollection, rowId: i.$id);
+      }
+    } catch (_) {}
+
+    await _tablesDB.deleteRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expensesCollection,
+      rowId: expenseId,
+    );
   }
 }
 
 final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   return ExpenseRepository(
     ref.watch(appwriteTablesDBProvider),
-    ref.watch(syncServiceProvider),
-    ref.watch(databaseHelperProvider),
   );
 });
 
