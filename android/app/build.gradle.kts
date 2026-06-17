@@ -43,16 +43,29 @@ android {
             storeFile = keystoreProperties["storeFile"]?.let { file(it) }
             storePassword = keystoreProperties["storePassword"] as String?
         }
+
+        // Define a consistent debug signing config using our committed keystore
+        create("commonDebug") {
+            keyAlias = "commonDebugKey"
+            keyPassword = "android"
+            storeFile = file("common-debug.keystore")
+            storePassword = "android"
+        }
     }
 
     buildTypes {
         release {
-            // Signing with the release keys locally, fallback to debug on CI
+            // Signing with the release keys locally, fallback to common debug on CI
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             } else {
-                signingConfig = signingConfigs.getByName("debug")
+                signingConfig = signingConfigs.getByName("commonDebug")
             }
+        }
+
+        debug {
+            // Also use commonDebug locally for running/debugging so it matches the CI signature!
+            signingConfig = signingConfigs.getByName("commonDebug")
         }
     }
 }
