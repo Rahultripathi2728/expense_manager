@@ -3,14 +3,34 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'app/theme/app_theme.dart';
 import 'app/theme/theme_provider.dart';
 import 'app/router/app_router.dart';
 import 'core/services/cache_service.dart';
 import 'core/services/realtime_service.dart';
+import 'core/services/push_notification_service.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp();
+    debugPrint("Background message handled: ${message.messageId}");
+  } catch (e) {
+    debugPrint("Background message initialization failed: $e");
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint("Firebase initialization failed: $e");
+  }
 
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -42,6 +62,7 @@ class ExpenseManagerApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
     ref.watch(realtimeInitProvider); // Keep realtime connection alive
+    ref.watch(pushNotificationInitProvider); // Keep push notifications alive
 
     return MaterialApp.router(
       title: 'Expense Manager',

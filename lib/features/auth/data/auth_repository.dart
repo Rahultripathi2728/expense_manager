@@ -1,9 +1,11 @@
 import 'package:appwrite/appwrite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../app/constants/app_constants.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../domain/user_model.dart';
 
 /// Repository for all authentication operations.
@@ -181,13 +183,14 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 /// Auth state: holds the current user or null.
 final authStateProvider =
     StateNotifierProvider<AuthStateNotifier, AsyncValue<UserModel?>>((ref) {
-      return AuthStateNotifier(ref.watch(authRepositoryProvider));
+      return AuthStateNotifier(ref.watch(authRepositoryProvider), ref);
     });
 
 class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
   final AuthRepository _repo;
+  final Ref _ref;
 
-  AuthStateNotifier(this._repo) : super(const AsyncValue.loading()) {
+  AuthStateNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
     _init();
   }
 
@@ -235,6 +238,12 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
   }
 
   Future<void> signOut() async {
+    try {
+      // Unregister the device push target BEFORE deleting the active session
+      await _ref.read(pushNotificationServiceProvider).unregisterDeviceToken();
+    } catch (e) {
+      debugPrint('Failed to unregister push token during logout: $e');
+    }
     await _repo.signOut();
     state = const AsyncValue.data(null);
   }

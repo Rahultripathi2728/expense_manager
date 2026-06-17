@@ -1,0 +1,9 @@
+{
+  "name": "send-push",
+  "version": "1.0.0",
+  "description": "Appwrite function to send push notifications when database entries are created",
+  "main": "src/main.js",
+  "dependencies": {
+    "node-appwrite": "^14.0.0"
+  }
+}
