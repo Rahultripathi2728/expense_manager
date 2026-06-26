@@ -5,6 +5,7 @@ import '../../features/auth/data/auth_repository.dart';
 import '../../features/auth/presentation/sign_in_page.dart';
 import '../../features/auth/presentation/sign_up_page.dart';
 import '../../features/auth/presentation/forgot_password_page.dart';
+import '../../features/auth/presentation/otp_verification_page.dart';
 import '../../features/auth/presentation/splash_page.dart';
 import '../../features/calendar/presentation/calendar_page.dart';
 import '../../features/expenses/presentation/my_expenses_page.dart';
@@ -81,6 +82,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/forgot-password',
         builder: (_, __) => const ForgotPasswordPage(),
+      ),
+      GoRoute(
+        path: '/otp',
+        builder: (context, state) {
+          final args = state.extra as Map<String, dynamic>? ?? {};
+          return OtpVerificationPage(
+            userId: args['userId'] ?? '',
+            email: args['email'] ?? '',
+            name: args['name'] ?? '',
+          );
+        },
       ),
 
       // ── Main App Shell ──

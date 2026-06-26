@@ -7,7 +7,7 @@ import '../../../../app/constants/app_constants.dart';
 import '../../../../core/appwrite_client.dart';
 import '../../../../core/utils/date_helpers.dart';
 import '../../../../core/utils/row_helpers.dart';
-import '../../../../shared/services/categorize_service.dart';
+import '../../../expenses/presentation/utils/category_icon_helper.dart';
 import '../../../expenses/domain/expense_model.dart';
 import '../../../expenses/domain/expense_split_model.dart';
 import '../../../expenses/data/expense_repository.dart';
@@ -102,13 +102,15 @@ class CalendarExpenseCard extends ConsumerWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
+                  color: AppColors.surfaceVariant,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderLight),
                 ),
                 child: Center(
-                  child: Text(
-                    CategorizeService.iconForCategory(expense.category),
-                    style: const TextStyle(fontSize: 20),
+                  child: Icon(
+                    CategoryIconHelper.getIcon(expense.category),
+                    color: AppColors.textPrimary,
+                    size: 20,
                   ),
                 ),
               ),

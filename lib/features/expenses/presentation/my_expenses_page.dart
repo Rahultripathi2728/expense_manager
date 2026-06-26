@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
 import 'package:go_router/go_router.dart';
+import 'utils/category_icon_helper.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../app/theme/app_colors.dart';
@@ -20,7 +21,10 @@ import '../../../shared/widgets/custom_error_widget.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
-final analyticsMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
+final analyticsMonthProvider = StateProvider<DateTime>((ref) {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, 1);
+});
 final chartTabProvider = StateProvider<int>(
   (ref) => 0,
 ); // 0 = Daily Trend, 1 = Categories
@@ -738,11 +742,6 @@ class _MyExpensesTab extends ConsumerWidget {
                       itemBuilder: (context, idx) {
                         final e = expenses[idx];
                         final isGrp = e.expenseType == 'group';
-                        final dotColor = e.isSettled
-                            ? const Color(0xFF22C55E)
-                            : isGrp
-                            ? const Color(0xFFF97316)
-                            : const Color(0xFF3B82F6);
 
                         double shareAmt = e.amount;
                         if (isGrp) {
@@ -773,14 +772,13 @@ class _MyExpensesTab extends ConsumerWidget {
                                 onTap: () =>
                                     context.push('/expense-detail', extra: e),
                                 leading: CircleAvatar(
-                                  backgroundColor: dotColor.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  child: Text(
-                                    CategorizeService.iconForCategory(
+                                  backgroundColor: AppColors.surfaceVariant,
+                                  child: Icon(
+                                    CategoryIconHelper.getIcon(
                                       e.category,
                                     ),
-                                    style: const TextStyle(fontSize: 18),
+                                    color: AppColors.textPrimary,
+                                    size: 20,
                                   ),
                                 ),
                                 title: Text(
@@ -1194,10 +1192,11 @@ class CategoryDistributionList extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 16,
-                backgroundColor: AppColors.borderLight,
-                child: Text(
-                  CategorizeService.iconForCategory(entry.key),
-                  style: const TextStyle(fontSize: 14),
+                backgroundColor: AppColors.surfaceVariant,
+                child: Icon(
+                  CategoryIconHelper.getIcon(entry.key),
+                  color: AppColors.textPrimary,
+                  size: 16,
                 ),
               ),
               const SizedBox(width: 12),

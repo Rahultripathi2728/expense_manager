@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../../core/utils/haptic_helper.dart';
 import '../../app/theme/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
@@ -61,7 +63,14 @@ class AppShell extends ConsumerWidget {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.account_balance_wallet, size: 22, color: AppColors.textPrimary),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.asset(
+                'assets/app_icon.png',
+                width: 22,
+                height: 22,
+              ),
+            ),
             const SizedBox(width: 8),
             Text(
               'Expense Manager',
@@ -77,18 +86,44 @@ class AppShell extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Center(
-              child: Badge(
-                isLabelVisible: unreadCount > 0,
-                label: Text('$unreadCount'),
-                backgroundColor: Colors.red,
-                child: IconButton(
-                  key: const Key('notifications_btn'),
-                  icon: Icon(
-                    Icons.notifications_outlined,
-                    color: AppColors.textPrimary,
-                  ),
-                  onPressed: () => context.push('/notifications'),
-                ),
+              child: Builder(
+                builder: (context) {
+                  Widget bellIcon = IconButton(
+                    key: const Key('notifications_btn'),
+                    icon: Icon(
+                      Icons.notifications_outlined,
+                      color: AppColors.textPrimary,
+                    ),
+                    onPressed: () => context.push('/notifications'),
+                  );
+
+                  if (unreadCount > 0) {
+                    bellIcon = bellIcon.animate(
+                      onPlay: (controller) => controller.repeat(),
+                    ).shake(
+                      hz: 3,
+                      curve: Curves.easeInOutCubic,
+                      duration: 450.ms,
+                    ).scale(
+                      begin: const Offset(1, 1),
+                      end: const Offset(1.1, 1.1),
+                      duration: 200.ms,
+                      curve: Curves.easeOut,
+                    ).then().scale(
+                      begin: const Offset(1.1, 1.1),
+                      end: const Offset(1, 1),
+                      duration: 200.ms,
+                      curve: Curves.easeIn,
+                    ).then(delay: 2500.ms);
+                  }
+
+                  return Badge(
+                    isLabelVisible: unreadCount > 0,
+                    label: Text('$unreadCount'),
+                    backgroundColor: Colors.red,
+                    child: bellIcon,
+                  );
+                },
               ),
             ),
           ),
@@ -231,7 +266,10 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
                           return SizedBox(
                             width: currentTabWidth,
                             child: GestureDetector(
-                              onTap: () => widget.onTap(tab.path),
+                              onTap: () {
+                                HapticHelper.selectionClick();
+                                widget.onTap(tab.path);
+                              },
                               behavior: HitTestBehavior.opaque,
                               child: Center(
                                 child: FittedBox(

@@ -118,6 +118,74 @@ class AuthRepository {
     return userModel;
   }
 
+  /// Create Appwrite user account and dispatch 6-digit OTP code to email.
+  Future<String> signUpCreate({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final user = await _account.create(
+      userId: ID.unique(),
+      email: email,
+      password: password,
+      name: name,
+    );
+    await _account.createEmailToken(
+      userId: user.$id,
+      email: email,
+    );
+    return user.$id;
+  }
+
+  /// Confirm the OTP code, log the user in, and create their profile.
+  Future<UserModel> signUpVerify({
+    required String userId,
+    required String email,
+    required String name,
+    required String otpCode,
+  }) async {
+    await _account.createSession(
+      userId: userId,
+      secret: otpCode,
+    );
+
+    await _tablesDB.createRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.profilesCollection,
+      rowId: ID.unique(),
+      data: {
+        'userId': userId,
+        'fullName': name,
+        'avatarUrl': null,
+        'monthlyBudget': 0.0,
+        'createdAt': DateTime.now().toIso8601String(),
+      },
+    );
+
+    try {
+      await _account.createEmailVerification(
+        url: 'https://expense-manager.app/verify',
+      );
+    } catch (_) {}
+
+    final user = await _account.get();
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
+  }
+
+  /// Resend verification OTP code.
+  Future<void> resendOtp({
+    required String userId,
+    required String email,
+  }) async {
+    await _account.createEmailToken(
+      userId: userId,
+      email: email,
+    );
+  }
+
   /// Sign out.
   Future<void> signOut() async {
     try {
@@ -235,6 +303,44 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
       // the UI handles displaying the error string.
       rethrow;
     }
+  }
+
+  Future<String> signUpCreate({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    return await _repo.signUpCreate(
+      name: name,
+      email: email,
+      password: password,
+    );
+  }
+
+  Future<void> signUpVerify({
+    required String userId,
+    required String email,
+    required String name,
+    required String otpCode,
+  }) async {
+    try {
+      final user = await _repo.signUpVerify(
+        userId: userId,
+        email: email,
+        name: name,
+        otpCode: otpCode,
+      );
+      state = AsyncValue.data(user);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> resendOtp({
+    required String userId,
+    required String email,
+  }) async {
+    await _repo.resendOtp(userId: userId, email: email);
   }
 
   Future<void> signOut() async {

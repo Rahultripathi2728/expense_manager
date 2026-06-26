@@ -97,6 +97,74 @@ class EquallySplitWidget extends StatelessWidget {
   }
 }
 
+class UnequalAmountTextField extends StatefulWidget {
+  final String userId;
+  final double initialValue;
+  final ValueChanged<double> onChanged;
+
+  const UnequalAmountTextField({
+    super.key,
+    required this.userId,
+    required this.initialValue,
+    required this.onChanged,
+  });
+
+  @override
+  State<UnequalAmountTextField> createState() => _UnequalAmountTextFieldState();
+}
+
+class _UnequalAmountTextFieldState extends State<UnequalAmountTextField> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialValue > 0.0 ? widget.initialValue.toStringAsFixed(2) : '',
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant UnequalAmountTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only update controller text if the initialValue changes from outside
+    // and is different from what is currently typed (like when clicking 'Split All Equally')
+    final currentTextVal = double.tryParse(_controller.text) ?? 0.0;
+    if ((widget.initialValue - currentTextVal).abs() > 0.01) {
+      _controller.text = widget.initialValue > 0.0 ? widget.initialValue.toStringAsFixed(2) : '';
+      _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+      ),
+      textAlign: TextAlign.right,
+      decoration: const InputDecoration(
+        prefixText: '₹',
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 8,
+        ),
+      ),
+      controller: _controller,
+      onChanged: (val) {
+        final amt = double.tryParse(val) ?? 0.0;
+        widget.onChanged(amt);
+      },
+    );
+  }
+}
+
 class UnequallySplitWidget extends StatelessWidget {
   final List<Profile> profiles;
   final SingleBillState activeBill;
@@ -191,31 +259,11 @@ class UnequallySplitWidget extends StatelessWidget {
                   SizedBox(
                     width: 100,
                     height: 38,
-                    child: TextField(
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      textAlign: TextAlign.right,
-                      decoration: const InputDecoration(
-                        prefixText: '₹',
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                      ),
-                      controller:
-                          TextEditingController(
-                              text: currentVal > 0.0
-                                  ? currentVal.toStringAsFixed(2)
-                                  : '',
-                            )
-                            ..selection = TextSelection.collapsed(
-                              offset: currentVal > 0.0
-                                  ? currentVal.toStringAsFixed(2).length
-                                  : 0,
-                            ),
-                      onChanged: (val) {
-                        final amt = double.tryParse(val) ?? 0.0;
+                    child: UnequalAmountTextField(
+                      key: ValueKey('unequal_field_${prof.userId}'),
+                      userId: prof.userId,
+                      initialValue: currentVal,
+                      onChanged: (amt) {
                         notifier.updateUnequalAmount(prof.userId, amt);
                       },
                     ),

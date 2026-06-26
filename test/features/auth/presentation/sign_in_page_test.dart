@@ -37,6 +37,33 @@ class FakeAuthRepository implements AuthRepository {
   Future<UserModel> updateName(String newName) async {
     throw UnimplementedError();
   }
+
+  @override
+  Future<String> signUpCreate({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<UserModel> signUpVerify({
+    required String userId,
+    required String email,
+    required String name,
+    required String otpCode,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> resendOtp({
+    required String userId,
+    required String email,
+  }) async {
+    throw UnimplementedError();
+  }
 }
 
 void main() {

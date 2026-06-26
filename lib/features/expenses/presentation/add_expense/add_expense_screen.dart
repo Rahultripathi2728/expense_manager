@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../../core/utils/haptic_helper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:appwrite/appwrite.dart';
+import '../utils/category_icon_helper.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_spacing.dart';
 import '../../../../app/constants/app_constants.dart';
@@ -205,6 +207,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       next,
     ) {
       if (next.success) {
+        HapticHelper.mediumTap();
         ref.invalidate(monthlyExpensesProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -580,23 +583,53 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: activeBill.category,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                  GestureDetector(
+                    onTap: () => _showCategoryBottomSheet(context, activeBill.category, notifier),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border, width: 1.0),
+                      ),
+                      child: Row(
+                        children: [
+                          activeBill.category.isNotEmpty
+                              ? Icon(
+                                  CategoryIconHelper.getIcon(activeBill.category),
+                                  color: AppColors.textPrimary,
+                                  size: 20,
+                                )
+                              : Icon(
+                                  Icons.tag_outlined,
+                                  color: AppColors.textTertiary,
+                                  size: 20,
+                                ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              activeBill.category.isNotEmpty
+                                  ? CategorizeService.displayName(activeBill.category)
+                                  : 'Select Category',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: activeBill.category.isNotEmpty
+                                    ? AppColors.textPrimary
+                                    : AppColors.textTertiary,
+                                fontWeight: activeBill.category.isNotEmpty
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            Icons.keyboard_arrow_down,
+                            color: AppColors.textSecondary,
+                            size: 20,
+                          ),
+                        ],
                       ),
                     ),
-                    items: CategorizeService.allCategories.map((cat) {
-                      return DropdownMenuItem(
-                        value: cat,
-                        child: Text(CategorizeService.displayName(cat)),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) notifier.updateCategory(val);
-                    },
                   ),
                   const SizedBox(height: AppSpacing.xl),
 
@@ -671,10 +704,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
               child: ElevatedButton(
                 onPressed: state.isLoading
                     ? null
-                    : () => notifier.submitExpense(
-                        groupId: widget.group?.id,
-                        date: _selectedDate,
-                      ),
+                    : () => _handleSubmit(context, state, activeBill, notifier),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.textPrimary,
                   foregroundColor: AppColors.surface,
@@ -737,4 +767,282 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     );
   }
 
+  void _showCategoryBottomSheet(
+    BuildContext context,
+    String currentCategory,
+    AddExpenseNotifier notifier, {
+    bool isFromSubmit = false,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Select Category',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            notifier.updateCategory('misc');
+                            Navigator.pop(context);
+                            if (isFromSubmit) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                notifier.submitExpense(
+                                  groupId: widget.group?.id,
+                                  date: _selectedDate,
+                                );
+                              });
+                            }
+                          },
+                          child: Text(
+                            'Skip',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        itemCount: categoryOptions.length + 1,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          childAspectRatio: 0.82,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemBuilder: (context, index) {
+                          if (index == categoryOptions.length) {
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showAddCustomCategoryDialog(context, notifier);
+                              },
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.add,
+                                      color: Colors.blueAccent,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      'Add Custom',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final option = categoryOptions[index];
+                          final isSelected = currentCategory.toLowerCase() == option.id;
+
+                          return GestureDetector(
+                            onTap: () {
+                              notifier.updateCategory(option.id);
+                              Navigator.pop(context);
+                            },
+                            child: Column(
+                              children: [
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? AppColors.textPrimary
+                                        : AppColors.surfaceVariant,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? AppColors.textPrimary
+                                          : AppColors.border,
+                                      width: isSelected ? 2.0 : 1.0,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    option.icon,
+                                    color: isSelected
+                                        ? AppColors.onPrimary
+                                        : AppColors.textPrimary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    option.label,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.w500,
+                                      color: isSelected
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddCustomCategoryDialog(BuildContext context, AddExpenseNotifier notifier) {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Custom Category'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'e.g. Rent, Books, Charity',
+            ),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.textPrimary,
+                      foregroundColor: AppColors.surface,
+                    ),
+                    onPressed: () {
+                      final val = ctrl.text.trim();
+                      if (val.isNotEmpty) {
+                        notifier.updateCategory(val);
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _handleSubmit(
+    BuildContext context,
+    AddExpenseState state,
+    SingleBillState activeBill,
+    AddExpenseNotifier notifier,
+  ) {
+    if (activeBill.category.isEmpty) {
+      _showCategoryBottomSheet(context, activeBill.category, notifier, isFromSubmit: true);
+    } else {
+      notifier.submitExpense(
+        groupId: widget.group?.id,
+        date: _selectedDate,
+      );
+    }
+  }
+
 }
+
+class CategoryOption {
+  final String id;
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const CategoryOption({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+}
+
+const List<CategoryOption> categoryOptions = [
+  CategoryOption(id: 'food', label: 'Food', icon: Icons.restaurant, color: Color(0xFFFFB74D)),
+  CategoryOption(id: 'groceries', label: 'Groceries', icon: Icons.shopping_basket_outlined, color: Color(0xFFF48FB1)),
+  CategoryOption(id: 'travel', label: 'Travel', icon: Icons.card_travel, color: Color(0xFF4FC3F7)),
+  CategoryOption(id: 'stays', label: 'Stays', icon: Icons.hotel_outlined, color: Color(0xFFA1887F)),
+  CategoryOption(id: 'bills', label: 'Bills', icon: Icons.receipt_outlined, color: Color(0xFF90A4AE)),
+  CategoryOption(id: 'subscription', label: 'Subscription', icon: Icons.subscriptions_outlined, color: Color(0xFFBA68C8)),
+  CategoryOption(id: 'shopping', label: 'Shopping', icon: Icons.shopping_cart_outlined, color: Color(0xFF4DD0E1)),
+  CategoryOption(id: 'gifts', label: 'Gifts', icon: Icons.card_giftcard_outlined, color: Color(0xFF9FA8DA)),
+  CategoryOption(id: 'drinks', label: 'Drinks', icon: Icons.local_drink_outlined, color: Color(0xFFFF8A65)),
+  CategoryOption(id: 'fuel', label: 'Fuel', icon: Icons.local_gas_station_outlined, color: Color(0xFF81C784)),
+  CategoryOption(id: 'udhaar', label: 'Udhaar(Debt)', icon: Icons.pie_chart_outline, color: Color(0xFFF06292)),
+  CategoryOption(id: 'health', label: 'Health', icon: Icons.favorite_border, color: Color(0xFFD4E157)),
+  CategoryOption(id: 'entertainment', label: 'Entertainment', icon: Icons.confirmation_number_outlined, color: Color(0xFF4DB6AC)),
+  CategoryOption(id: 'misc', label: 'Misc.', icon: Icons.more_horiz, color: Color(0xFFB0BEC5)),
+];

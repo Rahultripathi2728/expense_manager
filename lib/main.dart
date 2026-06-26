@@ -16,20 +16,22 @@ import 'core/services/push_notification_service.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
-    debugPrint("Background message handled: ${message.messageId}");
+    debugPrint('Background message handled: ${message.messageId}');
   } catch (e) {
-    debugPrint("Background message initialization failed: $e");
+    debugPrint('Background message initialization failed: $e');
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  } catch (e) {
-    debugPrint("Firebase initialization failed: $e");
+  if (!kIsWeb) {
+    try {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    } catch (e) {
+      debugPrint('Firebase initialization failed: $e');
+    }
   }
 
   // Catch Flutter framework errors
@@ -81,31 +83,52 @@ class ExpenseManagerApp extends ConsumerWidget {
               child: Stack(
                 children: [
                   if (child != null) child,
-                    if (isOffline)
-                      Positioned.fill(
-                        child: Material(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          child: const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.wifi_off_rounded, color: Colors.redAccent, size: 64),
-                                SizedBox(height: 16),
-                                Text(
-                                  'You are offline',
-                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Please connect to the internet to use Expense Manager.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                                ),
-                              ],
-                            ),
+                  // Non-blocking animated offline banner
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeInOutCubic,
+                    top: isOffline ? MediaQuery.of(context).padding.top : -(MediaQuery.of(context).padding.top + 36),
+                    left: 0,
+                    right: 0,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        padding: EdgeInsets.only(
+                          top: MediaQuery.of(context).padding.top + 4,
+                          bottom: 6,
+                          left: 16,
+                          right: 16,
+                        ),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF2D2D2D), Color(0xFF1A1A1A)],
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x33000000),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.wifi_off_rounded, color: Color(0xFFEF4444), size: 16),
+                            SizedBox(width: 8),
+                            Text(
+                              'You are offline — showing cached data',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                    ),
+                  ),
                 ],
               ),
             );

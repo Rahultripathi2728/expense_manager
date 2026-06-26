@@ -49,7 +49,7 @@ class SingleBillState {
   SingleBillState({
     this.description = '',
     this.amount = 0.0,
-    this.category = 'other',
+    this.category = '',
     this.splitType = 'equal',
     this.selectedMemberIds = const [],
     this.unequalAmounts = const {},
@@ -581,8 +581,6 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
 
       state = state.copyWith(isLoading: false, success: true);
     } catch (e) {
-      // print('Submit Expense Error: $e');
-      // print(stack);
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Failed to add expense: ${ErrorFormatter.format(e)}',

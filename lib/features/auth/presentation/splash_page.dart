@@ -114,27 +114,28 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                   scale: _iconScale.value,
                   child: Opacity(
                     opacity: _iconFade.value,
-                    child: Container(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      decoration: BoxDecoration(
-                        color: AppColors.textPrimary,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.textPrimary.withValues(
-                              alpha: 0.15 * _pulseAnimation.value,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.textPrimary.withValues(
+                                alpha: 0.15 * _pulseAnimation.value,
+                              ),
+                              blurRadius: 30 + (10 * _pulseAnimation.value),
+                              spreadRadius: 5 * _pulseAnimation.value,
                             ),
-                            blurRadius: 30 + (10 * _pulseAnimation.value),
-                            spreadRadius: 5 * _pulseAnimation.value,
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Image.asset(
+                            'assets/app_icon.png',
+                            width: 112,
+                            height: 112,
+                            fit: BoxFit.cover,
                           ),
-                        ],
+                        ),
                       ),
-                      child: Icon(
-                        Icons.account_balance_wallet,
-                        size: 64,
-                        color: AppColors.surface,
-                      ),
-                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),

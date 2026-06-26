@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../auth/data/auth_repository.dart';
@@ -8,6 +9,10 @@ import '../data/profile_repository.dart';
 import '../../update/data/update_service.dart';
 import '../../update/presentation/update_dialog.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
+
+final packageInfoProvider = FutureProvider<PackageInfo>((ref) async {
+  return await PackageInfo.fromPlatform();
+});
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -60,7 +65,15 @@ class ProfilePage extends ConsumerWidget {
             _SettingsTile(
               icon: Icons.person_outline,
               title: 'Edit Personal Details',
-              onTap: () => _showEditProfile(context, ref, user?.name ?? ''),
+              onTap: () {
+                final profile = profileAsync.valueOrNull;
+                _showEditProfile(
+                  context,
+                  ref,
+                  user?.name ?? '',
+                  profile?.upiId ?? '',
+                );
+              },
             ),
 
 
@@ -90,6 +103,11 @@ class ProfilePage extends ConsumerWidget {
               icon: Icons.system_update_alt,
               title: 'Check for Updates',
               onTap: () => _checkUpdate(context, ref),
+            ),
+            _SettingsTile(
+              icon: Icons.info_outline,
+              title: 'About',
+              onTap: () => _showAboutDialog(context),
             ),
             const Divider(height: AppSpacing.xxl),
             _SettingsTile(
@@ -139,8 +157,62 @@ class ProfilePage extends ConsumerWidget {
                 );
               },
             ),
+            const SizedBox(height: AppSpacing.xxl),
+            ref.watch(packageInfoProvider).when(
+                  data: (info) => Text(
+                    'Version ${info.version} (${info.buildNumber})',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary.withValues(alpha: 0.6),
+                        ),
+                  ),
+                  error: (_, __) => const SizedBox(),
+                  loading: () => const SizedBox(),
+                ),
+            const SizedBox(height: AppSpacing.lg),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('About Expense Manager'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Expense Manager is your ultimate companion for personal and group financial tracking.',
+              style: TextStyle(height: 1.4),
+            ),
+            SizedBox(height: AppSpacing.md),
+            Text(
+              'Features:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: AppSpacing.xs),
+            Text('• Track personal and group expenses\n• Settle bills with friends unequally or equally\n• View analytics and expense summaries\n• Sync automatically in real time'),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.textPrimary,
+                foregroundColor: AppColors.surface,
+                minimumSize: const Size(0, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -233,9 +305,12 @@ class ProfilePage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String currentName,
+    String currentUpiId,
   ) {
     final nameCtrl = TextEditingController(text: currentName);
+    final upiCtrl = TextEditingController(text: currentUpiId);
     bool loading = false;
+    String? upiError;
 
     showDialog(
       context: context,
@@ -248,6 +323,15 @@ class ProfilePage extends ConsumerWidget {
               TextField(
                 controller: nameCtrl,
                 decoration: const InputDecoration(labelText: 'Full Name'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: upiCtrl,
+                decoration: InputDecoration(
+                  labelText: 'UPI ID (VPA)',
+                  hintText: 'e.g. john@okaxis',
+                  errorText: upiError,
+                ),
               ),
             ],
           ),
@@ -278,11 +362,34 @@ class ProfilePage extends ConsumerWidget {
                         ? null
                         : () async {
                             if (nameCtrl.text.trim().isEmpty) return;
-                            setState(() => loading = true);
+                            final upi = upiCtrl.text.trim();
+                            if (upi.isNotEmpty) {
+                              final upiRegex = RegExp(r'^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$');
+                              if (!upiRegex.hasMatch(upi)) {
+                                setState(() => upiError = 'Invalid UPI ID format');
+                                return;
+                              }
+                            }
+                            
+                            setState(() {
+                              loading = true;
+                              upiError = null;
+                            });
                             try {
+                              // Update Name
                               await ref
                                   .read(authStateProvider.notifier)
                                   .updateName(nameCtrl.text.trim());
+                              
+                              // Update UPI ID in Profile
+                              final profile = ref.read(currentProfileProvider).valueOrNull;
+                              if (profile != null) {
+                                final updated = profile.copyWith(upiId: upi.isEmpty ? null : upi);
+                                await ref
+                                    .read(profileRepositoryProvider)
+                                    .updateProfile(updated);
+                              }
+                              
                               ref.invalidate(currentProfileProvider);
                               if (context.mounted) Navigator.pop(context);
                             } catch (e) {

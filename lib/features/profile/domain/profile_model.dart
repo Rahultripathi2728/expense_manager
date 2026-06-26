@@ -4,6 +4,7 @@ class Profile {
   final String fullName;
   final String? avatarUrl;
   final double monthlyBudget;
+  final String? upiId;
   final DateTime createdAt;
 
   const Profile({
@@ -12,6 +13,7 @@ class Profile {
     required this.fullName,
     this.avatarUrl,
     this.monthlyBudget = 0,
+    this.upiId,
     required this.createdAt,
   });
 
@@ -22,6 +24,7 @@ class Profile {
       fullName: map['fullName'] ?? '',
       avatarUrl: map['avatarUrl'],
       monthlyBudget: (map['monthlyBudget'] ?? 0).toDouble(),
+      upiId: map['upiId'],
       createdAt: DateTime.parse(map['createdAt']),
     );
   }
@@ -31,6 +34,7 @@ class Profile {
     'fullName': fullName,
     'avatarUrl': avatarUrl,
     'monthlyBudget': monthlyBudget,
+    'upiId': upiId,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -38,6 +42,7 @@ class Profile {
     String? fullName,
     String? avatarUrl,
     double? monthlyBudget,
+    String? upiId,
   }) {
     return Profile(
       id: id,
@@ -45,6 +50,7 @@ class Profile {
       fullName: fullName ?? this.fullName,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       monthlyBudget: monthlyBudget ?? this.monthlyBudget,
+      upiId: upiId ?? this.upiId,
       createdAt: createdAt,
     );
   }

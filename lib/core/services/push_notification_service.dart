@@ -8,14 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../appwrite_client.dart';
 import 'cache_service.dart';
 import '../../features/auth/data/auth_repository.dart';
+import '../../app/router/app_router.dart';
 
 /// Push Notification Service using Appwrite Messaging / Push Targets
 class PushNotificationService {
   final Account _account;
   final SharedPreferences _prefs;
+  final Ref _ref;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
-  PushNotificationService(this._account, this._prefs);
+  PushNotificationService(this._account, this._prefs, this._ref);
 
   static const String _fcmProviderId = '6a329e92000244e586c8';
   static const String _pushTargetIdKey = 'push_target_id';
@@ -23,6 +25,10 @@ class PushNotificationService {
 
   /// Initialize permissions, local channels, and foreground message handlers.
   Future<void> initialize() async {
+    if (kIsWeb) {
+      debugPrint('Push notifications are skipped on Web.');
+      return;
+    }
     // 1. Request notification permission
     final notificationSettings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
@@ -38,7 +44,7 @@ class PushNotificationService {
     }
 
     // 2. Initialize Local Notifications for Foreground display
-    const androidInitSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidInitSettings = AndroidInitializationSettings('launcher_icon');
     const initSettings = InitializationSettings(android: androidInitSettings);
     await _localNotifications.initialize(
       settings: initSettings,
@@ -55,44 +61,76 @@ class PushNotificationService {
       importance: Importance.max,
     );
 
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(androidChannel);
+    final androidPlugin = _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      await androidPlugin.createNotificationChannel(androidChannel);
+      await androidPlugin.requestNotificationsPermission();
+    }
 
     // 3. Listen to foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('Foreground message received: ${message.messageId}');
-      final notification = message.notification;
-      final android = message.notification?.android;
-
-      if (notification != null && android != null) {
-        _localNotifications.show(
-          id: notification.hashCode,
-          title: notification.title,
-          body: notification.body,
-          notificationDetails: NotificationDetails(
-            android: AndroidNotificationDetails(
-              androidChannel.id,
-              androidChannel.name,
-              channelDescription: androidChannel.description,
-              icon: '@mipmap/ic_launcher',
-              importance: Importance.max,
-              priority: Priority.high,
-            ),
-          ),
-          payload: jsonEncode(message.data),
-        );
+      debugPrint('Payload data: ${message.data}');
+      
+      String? title = message.notification?.title;
+      String? body = message.notification?.body;
+      
+      // Fallback if the payload has direct keys in message.data
+      if (title == null || title.isEmpty) {
+        title = message.data['title'] as String?;
       }
+      if (body == null || body.isEmpty) {
+        body = message.data['body'] as String?;
+      }
+      
+      // Default fallback
+      title ??= 'New Notification';
+
+      _localNotifications.show(
+        id: message.hashCode,
+        title: title,
+        body: body ?? '',
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            androidChannel.id,
+            androidChannel.name,
+            channelDescription: androidChannel.description,
+            icon: 'launcher_icon',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+        payload: jsonEncode(message.data),
+      );
     });
 
     // 4. Handle notification clicks (app opened from notification)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Notification clicked to open app: ${message.data}');
+      _handleNotificationClick(message.data);
     });
+
+    // Also handle if app was terminated and opened by notification
+    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+      if (message != null) {
+        debugPrint('App opened from terminated state by notification: ${message.data}');
+        _handleNotificationClick(message.data);
+      }
+    });
+  }
+
+  void _handleNotificationClick(Map<String, dynamic> data) {
+    try {
+      _ref.read(routerProvider).go('/notifications');
+    } catch (e) {
+      debugPrint('Error navigating on notification click: $e');
+    }
   }
 
   /// Registers the device FCM token with Appwrite.
   Future<void> registerDeviceToken(String userId) async {
+    if (kIsWeb) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) {
@@ -134,6 +172,7 @@ class PushNotificationService {
 
   /// Unregisters the device FCM token from Appwrite (on logout).
   Future<void> unregisterDeviceToken() async {
+    if (kIsWeb) return;
     try {
       final cachedTargetId = _prefs.getString(_pushTargetIdKey);
       if (cachedTargetId != null) {
@@ -151,7 +190,7 @@ class PushNotificationService {
 final pushNotificationServiceProvider = Provider<PushNotificationService>((ref) {
   final account = ref.watch(appwriteAccountProvider);
   final prefs = ref.watch(sharedPreferencesProvider);
-  return PushNotificationService(account, prefs);
+  return PushNotificationService(account, prefs, ref);
 });
 
 final pushNotificationInitProvider = Provider<void>((ref) {

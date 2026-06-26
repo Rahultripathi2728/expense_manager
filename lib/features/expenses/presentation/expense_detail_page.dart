@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/haptic_helper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
@@ -11,6 +12,7 @@ import '../domain/expense_model.dart';
 import '../data/expense_repository.dart';
 import '../../calendar/presentation/widgets/calendar_expense_card.dart'; // For group/profile providers
 import 'add_expense/add_expense_screen.dart';
+import 'utils/category_icon_helper.dart';
 
 class ExpenseDetailPage extends ConsumerStatefulWidget {
   final Expense expense;
@@ -67,6 +69,7 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
       ref.invalidate(monthlyExpensesProvider);
 
       if (mounted) {
+        HapticHelper.heavyTap();
         context.pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -160,14 +163,15 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
+                color: AppColors.surfaceVariant,
                 shape: BoxShape.circle,
-                border: Border.all(color: AppColors.borderLight),
+                border: Border.all(color: AppColors.border),
               ),
               child: Center(
-                child: Text(
-                  CategorizeService.iconForCategory(expense.category),
-                  style: const TextStyle(fontSize: 40),
+                child: Icon(
+                  CategoryIconHelper.getIcon(expense.category),
+                  color: AppColors.textPrimary,
+                  size: 40,
                 ),
               ),
             ),

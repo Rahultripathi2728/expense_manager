@@ -144,10 +144,13 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.account_balance_wallet,
-                        size: 28,
-                        color: AppColors.textPrimary,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.asset(
+                          'assets/app_icon.png',
+                          width: 28,
+                          height: 28,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Text(

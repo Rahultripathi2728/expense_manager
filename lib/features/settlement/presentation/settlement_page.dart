@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
 import 'package:appwrite/appwrite.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../../../core/utils/haptic_helper.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../app/constants/app_constants.dart';
@@ -151,10 +154,382 @@ class SettlementPage extends ConsumerStatefulWidget {
   ConsumerState<SettlementPage> createState() => _SettlementPageState();
 }
 
-class _SettlementPageState extends ConsumerState<SettlementPage> {
+class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBindingObserver {
   String? selectedGroupId;
   bool settling = false;
   bool _initialGroupSet = false;
+
+  SimplifiedTransaction? _pendingTransaction;
+  List<String>? _pendingExpIds;
+  bool _showingConfirmationDialog = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _handleAppResumed();
+    }
+  }
+
+  void _handleAppResumed() {
+    if (_pendingTransaction != null && !_showingConfirmationDialog && mounted) {
+      _showResumptionConfirmationDialog(_pendingTransaction!);
+    }
+  }
+
+  Future<void> _performSettlement(SimplifiedTransaction tx, List<String> expIds) async {
+    setState(() => settling = true);
+    try {
+      final repo = ref.read(settlementRepositoryProvider);
+      try {
+        await repo.settleBalances(
+          selectedGroupId!,
+          tx.fromUserId,
+          tx.toUserId,
+          tx.amount,
+        );
+      } catch (_) {
+        await repo.settleBalancesLocalFallback(
+          selectedGroupId!,
+          tx.fromUserId,
+          tx.toUserId,
+          tx.amount,
+          expIds,
+        );
+      }
+
+      ref.invalidate(groupBalancesProvider(selectedGroupId!));
+      ref.invalidate(monthlyExpensesProvider);
+
+      if (mounted) {
+        HapticHelper.mediumTap();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Balances Settled!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Settlement failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => settling = false);
+      }
+    }
+  }
+
+  void _showNoUpiIdBottomSheet(SimplifiedTransaction tx, List<String> expIds, String toName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.radiusXl),
+        ),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.lg,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.warningMuted,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.warning,
+                        size: AppSpacing.iconXl,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        'UPI ID Not Found',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  '$toName has not added their UPI ID to their profile. You cannot initiate an automatic UPI payment redirect.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'If you have paid them via cash or another app, you can manually mark this settlement as complete.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.textPrimary,
+                    foregroundColor: AppColors.surface,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _performSettlement(tx, expIds);
+                  },
+                  child: const Text(
+                    'Mark as Settled (Manual)',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showResumptionConfirmationDialog(SimplifiedTransaction tx) {
+    if (_showingConfirmationDialog) return;
+    _showingConfirmationDialog = true;
+    
+    final toName = ref.read(groupBalancesProvider(selectedGroupId!)).valueOrNull?.profiles[tx.toUserId]?.fullName ?? 'User';
+    final expIds = _pendingExpIds ?? [];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                color: AppColors.success,
+                size: AppSpacing.iconLg,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Verify UPI Payment',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                text: TextSpan(
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                  children: [
+                    const TextSpan(text: 'We opened your UPI app to transfer '),
+                    TextSpan(
+                      text: DateHelpers.formatCurrency(tx.amount),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: ' to '),
+                    TextSpan(
+                      text: toName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const TextSpan(text: '.\n\nDid you successfully complete the payment?'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _pendingTransaction = null;
+                _pendingExpIds = null;
+                _showingConfirmationDialog = false;
+                Navigator.pop(ctx);
+              },
+              child: Text(
+                'No, Cancel',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.textPrimary,
+                foregroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                ),
+              ),
+              onPressed: () {
+                _pendingTransaction = null;
+                _pendingExpIds = null;
+                _showingConfirmationDialog = false;
+                Navigator.pop(ctx);
+                _performSettlement(tx, expIds);
+              },
+              child: const Text(
+                'Yes, Settle',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showFallbackManualSettlement(SimplifiedTransaction tx, {required String errorMsg}) {
+    final toName = ref.read(groupBalancesProvider(selectedGroupId!)).valueOrNull?.profiles[tx.toUserId]?.fullName ?? 'User';
+    final expIds = _pendingExpIds ?? [];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: AppColors.warning,
+                size: AppSpacing.iconLg,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'UPI Redirect Failed',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            '$errorMsg\n\nWould you like to manually mark this settlement of ${DateHelpers.formatCurrency(tx.amount)} to $toName as complete?',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _pendingTransaction = null;
+                _pendingExpIds = null;
+                Navigator.pop(ctx);
+              },
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.textPrimary,
+                foregroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                ),
+              ),
+              onPressed: () {
+                _pendingTransaction = null;
+                _pendingExpIds = null;
+                Navigator.pop(ctx);
+                _performSettlement(tx, expIds);
+              },
+              child: const Text(
+                'Mark as Settled',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -770,166 +1145,73 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
                                                     onPressed: settling
                                                         ? null
                                                         : () async {
-                                                            // Show confirmation dialog
-                                                            final confirmed = await showDialog<bool>(
-                                                              context: context,
-                                                              builder: (ctx) => AlertDialog(
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        16,
-                                                                      ),
-                                                                ),
-                                                                title: const Text(
-                                                                  'Confirm Settlement',
-                                                                  style: TextStyle(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .bold,
-                                                                  ),
-                                                                ),
-                                                                content: Text(
-                                                                  '${data.profiles[tx.fromUserId]?.fullName ?? "User"} pays ${data.profiles[tx.toUserId]?.fullName ?? "User"} ${DateHelpers.formatCurrency(tx.amount)}.\n\nThis will mark all related expenses as settled. This action cannot be undone.',
-                                                                ),
-                                                                actions: [
-                                                                  TextButton(
-                                                                    onPressed: () =>
-                                                                        Navigator.pop(
-                                                                          ctx,
-                                                                          false,
-                                                                        ),
-                                                                    child: const Text(
-                                                                      'Cancel',
-                                                                      style: TextStyle(
-                                                                        color: Colors
-                                                                            .grey,
-                                                                      ),
-                                                                    ),
-                                                                  ),
-                                                                  ElevatedButton(
-                                                                    style: ElevatedButton.styleFrom(
-                                                                      backgroundColor:
-                                                                          Colors
-                                                                              .black,
-                                                                      foregroundColor:
-                                                                          Colors
-                                                                              .white,
-                                                                      minimumSize: const Size(100, 48),
-                                                                      shape: RoundedRectangleBorder(
-                                                                        borderRadius:
-                                                                            BorderRadius.circular(
-                                                                              8,
-                                                                            ),
-                                                                      ),
-                                                                    ),
-                                                                    onPressed: () =>
-                                                                        Navigator.pop(
-                                                                          ctx,
-                                                                          true,
-                                                                        ),
-                                                                    child: const Text(
-                                                                      'Settle',
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            );
-                                                            if (confirmed !=
-                                                                true) {
-                                                              return;
-                                                            }
+                                                            final payeeProfile = data.profiles[tx.toUserId];
+                                                            final payeeUpiId = payeeProfile?.upiId;
+                                                            final expIds = data.unsettledExpenses.map((e) => e.id).toList();
 
-                                                            setState(
-                                                              () => settling =
-                                                                  true,
-                                                            );
-                                                            try {
-                                                              final repo = ref.read(
-                                                                settlementRepositoryProvider,
+                                                            if (payeeUpiId == null || payeeUpiId.trim().isEmpty) {
+                                                              _showNoUpiIdBottomSheet(tx, expIds, toName);
+                                                            } else {
+                                                              final groupName = groups.firstWhere(
+                                                                (g) => g.id == selectedGroupId,
+                                                                orElse: () => groups.first,
+                                                              ).name;
+
+                                                              final upiUri = Uri.parse(
+                                                                'upi://pay?pa=$payeeUpiId'
+                                                                '&pn=${Uri.encodeComponent(payeeProfile?.fullName ?? 'User')}'
+                                                                '&am=${tx.amount.toStringAsFixed(2)}'
+                                                                '&cu=INR'
+                                                                '&tn=${Uri.encodeComponent("Settle Bill $groupName")}'
                                                               );
-                                                              final expIds = data
-                                                                  .unsettledExpenses
-                                                                  .map(
-                                                                    (e) => e.id,
-                                                                  )
-                                                                  .toList();
 
-                                                              // Attempt to settle using backend, or local fallback
+                                                              _pendingTransaction = tx;
+                                                              _pendingExpIds = expIds;
+
                                                               try {
-                                                                await repo.settleBalances(
-                                                                  selectedGroupId!,
-                                                                  tx.fromUserId,
-                                                                  tx.toUserId,
-                                                                  tx.amount,
-                                                                );
-                                                              } catch (_) {
-                                                                // Fallback client-side update
-                                                                await repo.settleBalancesLocalFallback(
-                                                                  selectedGroupId!,
-                                                                  tx.fromUserId,
-                                                                  tx.toUserId,
-                                                                  tx.amount,
-                                                                  expIds,
-                                                                );
-                                                              }
-
-                                                              ref.invalidate(
-                                                                groupBalancesProvider(
-                                                                  selectedGroupId!,
-                                                                ),
-                                                              );
-                                                              ref.invalidate(
-                                                                monthlyExpensesProvider,
-                                                              );
-
-                                                              if (context
-                                                                  .mounted) {
-                                                                ScaffoldMessenger.of(
-                                                                  context,
-                                                                ).showSnackBar(
-                                                                  const SnackBar(
-                                                                    content: Text(
-                                                                      'Balances Settled!',
-                                                                    ),
-                                                                    backgroundColor:
-                                                                        Colors
-                                                                            .green,
-                                                                  ),
-                                                                );
-                                                              }
-                                                            } catch (e) {
-                                                              if (context
-                                                                  .mounted) {
-                                                                ScaffoldMessenger.of(
-                                                                  context,
-                                                                ).showSnackBar(
-                                                                  SnackBar(
-                                                                    content: Text(
-                                                                      'Settlement failed: $e',
-                                                                    ),
-                                                                    backgroundColor:
-                                                                        Colors
-                                                                            .red,
-                                                                  ),
-                                                                );
-                                                              }
-                                                            } finally {
-                                                              if (mounted) {
-                                                                setState(
-                                                                  () =>
-                                                                      settling =
-                                                                          false,
-                                                                );
+                                                                if (await canLaunchUrl(upiUri)) {
+                                                                  await launchUrl(
+                                                                    upiUri,
+                                                                    mode: LaunchMode.externalApplication,
+                                                                  );
+                                                                  if (kIsWeb && mounted) {
+                                                                    _showResumptionConfirmationDialog(tx);
+                                                                  }
+                                                                } else {
+                                                                  if (mounted) {
+                                                                    _showFallbackManualSettlement(
+                                                                      tx,
+                                                                      errorMsg: 'No UPI applications were found on this device or UPI scheme is not supported.',
+                                                                    );
+                                                                  }
+                                                                }
+                                                              } catch (e) {
+                                                                if (mounted) {
+                                                                  _showFallbackManualSettlement(
+                                                                    tx,
+                                                                    errorMsg: 'Could not redirect to UPI app: $e',
+                                                                  );
+                                                                }
                                                               }
                                                             }
                                                           },
-                                                    child: const Text(
-                                                      'Mark as Settled',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Icon(
+                                                          Icons.bolt,
+                                                          size: 14,
+                                                          color: AppColors.surface,
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        const Text(
+                                                          'Pay & Settle',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ),
                                               ],

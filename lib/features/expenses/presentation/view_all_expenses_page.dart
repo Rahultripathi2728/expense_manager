@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../../core/utils/haptic_helper.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'utils/category_icon_helper.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
@@ -18,7 +21,7 @@ class ViewAllExpensesPage extends ConsumerStatefulWidget {
 }
 
 class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
-  DateTime _selectedMonth = DateTime.now();
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
   String? _selectedCategory;
 
   @override
@@ -46,20 +49,9 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
           onPressed: () => context.pop(),
         ),
         actions: [
-          PopupMenuButton<String>(
+          IconButton(
             icon: Icon(Icons.ios_share, color: AppColors.textPrimary),
-            onSelected: (value) async {
-              if (filtered.isEmpty) return;
-              if (value == 'pdf') {
-                await ExportService.exportToPDF(filtered);
-              } else if (value == 'csv') {
-                await ExportService.exportToCSV(filtered);
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'pdf', child: Text('Export as PDF')),
-              const PopupMenuItem(value: 'csv', child: Text('Export as CSV')),
-            ],
+            onPressed: () => _showExportFilterSheet(context, filtered),
           ),
         ],
       ),
@@ -128,8 +120,12 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
-                      avatar: Text(CategorizeService.iconForCategory(cat)),
-                      label: Text(CategorizeService.displayName(cat)),
+                    avatar: Icon(
+                      CategoryIconHelper.getIcon(cat),
+                      color: isSelected ? AppColors.onPrimary : AppColors.textPrimary,
+                      size: 16,
+                    ),
+                    label: Text(CategorizeService.displayName(cat)),
                       selected: isSelected,
                       onSelected: (selected) {
                         setState(() {
@@ -211,11 +207,6 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                   itemBuilder: (context, index) {
                     final e = filtered[index];
                     final isGroup = e.expenseType == 'group';
-                    final dotColor = e.isSettled
-                        ? const Color(0xFF22C55E)
-                        : isGroup
-                        ? const Color(0xFFF97316)
-                        : const Color(0xFF3B82F6);
 
                     return StaggeredListItem(
                       index: index,
@@ -234,10 +225,11 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                             onTap: () =>
                                 context.push('/expense-detail', extra: e),
                             leading: CircleAvatar(
-                              backgroundColor: dotColor.withValues(alpha: 0.1),
-                              child: Text(
-                                CategorizeService.iconForCategory(e.category),
-                                style: const TextStyle(fontSize: 18),
+                              backgroundColor: AppColors.surfaceVariant,
+                              child: Icon(
+                                CategoryIconHelper.getIcon(e.category),
+                                color: AppColors.textPrimary,
+                                size: 20,
                               ),
                             ),
                             title: Text(
@@ -318,6 +310,278 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
           ),
         ),
         ],
+      ),
+    );
+  }
+
+  void _showExportFilterSheet(BuildContext context, List expenses) {
+    if (expenses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No expenses to export'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    String? filterCategory;
+    DateTime? startDate;
+    DateTime? endDate;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          // Get unique categories from current expenses
+          final categories = expenses
+              .map((e) => e.category as String)
+              .where((c) => c.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+
+          // Apply local filter
+          var exportExpenses = List.from(expenses);
+          if (filterCategory != null) {
+            exportExpenses = exportExpenses.where((e) => e.category == filterCategory).toList();
+          }
+          if (startDate != null) {
+            exportExpenses = exportExpenses.where((e) => !e.expenseDate.isBefore(startDate!)).toList();
+          }
+          if (endDate != null) {
+            final endOfDay = DateTime(endDate!.year, endDate!.month, endDate!.day, 23, 59, 59);
+            exportExpenses = exportExpenses.where((e) => !e.expenseDate.isAfter(endOfDay)).toList();
+          }
+
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.textTertiary.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Export Expenses',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${exportExpenses.length} expense(s) will be exported',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+
+                // Category Filter
+                Text(
+                  'Filter by Category',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _FilterChip(
+                        label: 'All',
+                        isSelected: filterCategory == null,
+                        onTap: () => setState(() => filterCategory = null),
+                      ),
+                      ...categories.map((cat) => Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _FilterChip(
+                          label: cat,
+                          isSelected: filterCategory == cat,
+                          onTap: () => setState(() => filterCategory = cat),
+                        ),
+                      )),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Date Range
+                Text(
+                  'Date Range',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: startDate ?? DateTime.now().subtract(const Duration(days: 30)),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) setState(() => startDate = picked);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.textTertiary.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            startDate != null ? DateFormat('dd MMM yyyy').format(startDate!) : 'Start date',
+                            style: TextStyle(
+                              color: startDate != null ? AppColors.textPrimary : AppColors.textTertiary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.arrow_forward, size: 16, color: AppColors.textTertiary),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: endDate ?? DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                          );
+                          if (picked != null) setState(() => endDate = picked);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.textTertiary.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            endDate != null ? DateFormat('dd MMM yyyy').format(endDate!) : 'End date',
+                            style: TextStyle(
+                              color: endDate != null ? AppColors.textPrimary : AppColors.textTertiary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (startDate != null || endDate != null)
+                      IconButton(
+                        icon: Icon(Icons.clear, size: 18, color: AppColors.textSecondary),
+                        onPressed: () => setState(() {
+                          startDate = null;
+                          endDate = null;
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Export Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.picture_as_pdf, size: 18),
+                        label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.textPrimary,
+                          foregroundColor: AppColors.surface,
+                          minimumSize: const Size(0, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: exportExpenses.isEmpty
+                            ? null
+                            : () async {
+                                HapticHelper.mediumTap();
+                                Navigator.pop(context);
+                                await ExportService.exportToPDF(exportExpenses.cast());
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.table_chart_outlined, size: 18),
+                        label: const Text('CSV', style: TextStyle(fontWeight: FontWeight.bold)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textPrimary,
+                          side: BorderSide(color: AppColors.textPrimary),
+                          minimumSize: const Size(0, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: exportExpenses.isEmpty
+                            ? null
+                            : () async {
+                                HapticHelper.mediumTap();
+                                Navigator.pop(context);
+                                await ExportService.exportToCSV(exportExpenses.cast());
+                              },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _FilterChip({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticHelper.selectionClick();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.textPrimary : Colors.transparent,
+          border: Border.all(
+            color: isSelected ? AppColors.textPrimary : AppColors.textTertiary.withValues(alpha: 0.3),
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? AppColors.surface : AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }

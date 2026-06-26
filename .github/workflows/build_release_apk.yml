@@ -32,7 +32,10 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
+      - name: Rename APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/expense-manager-${{ github.event.release.tag_name }}.apk
+
       - name: Upload APK to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} build/app/outputs/flutter-apk/app-release.apk
+        run: gh release upload ${{ github.event.release.tag_name }} build/app/outputs/flutter-apk/expense-manager-${{ github.event.release.tag_name }}.apk

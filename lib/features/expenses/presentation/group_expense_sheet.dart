@@ -4,6 +4,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
+import 'utils/category_icon_helper.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../groups/data/group_repository.dart';
 import '../../groups/domain/group_member_model.dart';
@@ -207,7 +208,11 @@ class _GroupExpenseSheetState extends ConsumerState<GroupExpenseSheet> {
                             value: c,
                             child: Row(
                               children: [
-                                Text(CategorizeService.iconForCategory(c)),
+                                Icon(
+                                  CategoryIconHelper.getIcon(c),
+                                  color: AppColors.textPrimary,
+                                  size: 18,
+                                ),
                                 const SizedBox(width: AppSpacing.sm),
                                 Text(CategorizeService.displayName(c)),
                               ],
