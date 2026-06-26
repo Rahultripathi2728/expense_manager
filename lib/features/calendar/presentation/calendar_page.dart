@@ -239,7 +239,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.sm,
-                        vertical: 6,
+                        vertical: 4,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -248,7 +248,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                             icon: Icon(
                               Icons.chevron_left,
                               color: AppColors.textPrimary,
-                              size: 24,
+                              size: 20,
                             ),
                             onPressed: () =>
                                 ref.read(calendarMonthProvider.notifier).state =
@@ -257,7 +257,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                           Text(
                             DateHelpers.formatMonthYear(currentMonth),
                             style: TextStyle(
-                              fontSize: 17,
+                              fontSize: 15,
                               fontWeight: FontWeight.bold,
                               color: AppColors.textPrimary,
                             ),
@@ -266,7 +266,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                             icon: Icon(
                               Icons.chevron_right,
                               color: AppColors.textPrimary,
-                              size: 24,
+                              size: 20,
                             ),
                             onPressed: () =>
                                 ref.read(calendarMonthProvider.notifier).state =
@@ -278,7 +278,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.sm,
-                        vertical: 8,
+                        vertical: 4,
                       ),
                       child: Row(
                         children:
@@ -289,7 +289,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                       child: Text(
                                         day,
                                         style: TextStyle(
-                                          fontSize: 11,
+                                          fontSize: 10,
                                           fontWeight: FontWeight.w700,
                                           color: AppColors.textSecondary,
                                           letterSpacing: 0.5,
@@ -315,7 +315,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               const double crossAxisSpacing = 6.0;
                               const int crossAxisCount = 7;
                               final double cellWidth = (totalWidth - (crossAxisCount - 1) * crossAxisSpacing) / crossAxisCount;
-                              const double desiredHeight = 98.0; // Locked height matching spacious style
+                              const double desiredHeight = 84.0; // Balanced vertical capsule height
                               final double calculatedAspectRatio = cellWidth / desiredHeight;
 
                               return GridView.builder(
@@ -329,7 +329,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   crossAxisCount: crossAxisCount,
                                   childAspectRatio: calculatedAspectRatio,
                                   crossAxisSpacing: crossAxisSpacing,
-                                  mainAxisSpacing: 12,
+                                  mainAxisSpacing: 8,
                                 ),
                                 itemCount: 42,
                                 itemBuilder: (context, index) {
@@ -406,16 +406,16 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                         milliseconds: 150,
                                       ),
                                       padding: const EdgeInsets.only(
-                                        top: 10.0,
-                                        bottom: 8.0,
-                                        left: 3.0,
-                                        right: 3.0,
+                                        top: 8.0,
+                                        bottom: 6.0,
+                                        left: 2.0,
+                                        right: 2.0,
                                       ),
                                       decoration: BoxDecoration(
                                         color: isSelected
                                             ? const Color(0xFFEBEBEB)
                                             : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(16),
+                                        borderRadius: BorderRadius.circular(12),
                                         border: isToday
                                             ? Border.all(
                                                 color: AppColors.textPrimary,
@@ -430,16 +430,16 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                           Text(
                                             '${cellDate.day}',
                                             style: TextStyle(
-                                              fontSize: 16,
+                                              fontSize: 15,
                                               fontWeight: FontWeight.bold,
                                               color: isCurrentMonthDay
                                                   ? AppColors.textPrimary
                                                   : Colors.grey.shade300,
                                             ),
                                           ),
-                                          const SizedBox(height: 6),
+                                          const SizedBox(height: 4),
                                           SizedBox(
-                                            height: 14,
+                                            height: 11,
                                             child: (isSelected &&
                                                     totalSpent > 0)
                                                 ? FittedBox(
@@ -449,7 +449,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                                         totalSpent,
                                                       ),
                                                       style: TextStyle(
-                                                        fontSize: 10.5,
+                                                        fontSize: 9.5,
                                                         fontWeight:
                                                             FontWeight.w900,
                                                         color: AppColors
@@ -459,9 +459,9 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                                   )
                                                 : const SizedBox.shrink(),
                                           ),
-                                          const SizedBox(height: 6),
+                                          const SizedBox(height: 4),
                                           SizedBox(
-                                            height: 6,
+                                            height: 5,
                                             child: dotColors.isNotEmpty
                                                 ? Row(
                                                     mainAxisAlignment:
@@ -472,10 +472,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                                             margin:
                                                                 const EdgeInsets
                                                                     .symmetric(
-                                                              horizontal: 1.0,
+                                                              horizontal: 0.8,
                                                             ),
-                                                            width: 5.5,
-                                                            height: 5.5,
+                                                            width: 4.5,
+                                                            height: 4.5,
                                                             decoration:
                                                                 BoxDecoration(
                                                               color: color,
