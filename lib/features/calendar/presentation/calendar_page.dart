@@ -315,7 +315,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               const double crossAxisSpacing = 6.0;
                               const int crossAxisCount = 7;
                               final double cellWidth = (totalWidth - (crossAxisCount - 1) * crossAxisSpacing) / crossAxisCount;
-                              const double desiredHeight = 68.0; // Clean normal height for a balanced capsule shape
+                              const double desiredHeight = 60.0; // Clean normal height for a balanced capsule shape
                               final double calculatedAspectRatio = cellWidth / desiredHeight;
 
                               return GridView.builder(
@@ -329,7 +329,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   crossAxisCount: crossAxisCount,
                                   childAspectRatio: calculatedAspectRatio,
                                   crossAxisSpacing: crossAxisSpacing,
-                                  mainAxisSpacing: 6,
+                                  mainAxisSpacing: 4,
                                 ),
                                 itemCount: 42,
                                 itemBuilder: (context, index) {
@@ -406,8 +406,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                         milliseconds: 150,
                                       ),
                                       padding: const EdgeInsets.only(
-                                        top: 6.0,
-                                        bottom: 6.0,
+                                        top: 4.0,
+                                        bottom: 4.0,
                                         left: 2.0,
                                         right: 2.0,
                                       ),
