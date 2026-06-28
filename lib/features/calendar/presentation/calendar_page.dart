@@ -257,7 +257,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                           Text(
                             DateHelpers.formatMonthYear(currentMonth),
                             style: TextStyle(
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.bold,
                               color: AppColors.textPrimary,
                             ),
@@ -315,7 +315,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               const double crossAxisSpacing = 6.0;
                               const int crossAxisCount = 7;
                               final double cellWidth = (totalWidth - (crossAxisCount - 1) * crossAxisSpacing) / crossAxisCount;
-                              const double desiredHeight = 84.0; // Balanced vertical capsule height
+                              const double desiredHeight = 68.0; // Clean normal height for a balanced capsule shape
                               final double calculatedAspectRatio = cellWidth / desiredHeight;
 
                               return GridView.builder(
@@ -329,7 +329,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   crossAxisCount: crossAxisCount,
                                   childAspectRatio: calculatedAspectRatio,
                                   crossAxisSpacing: crossAxisSpacing,
-                                  mainAxisSpacing: 8,
+                                  mainAxisSpacing: 6,
                                 ),
                                 itemCount: 42,
                                 itemBuilder: (context, index) {
@@ -406,7 +406,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                         milliseconds: 150,
                                       ),
                                       padding: const EdgeInsets.only(
-                                        top: 8.0,
+                                        top: 6.0,
                                         bottom: 6.0,
                                         left: 2.0,
                                         right: 2.0,
@@ -430,7 +430,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                           Text(
                                             '${cellDate.day}',
                                             style: TextStyle(
-                                              fontSize: 15,
+                                              fontSize: 14,
                                               fontWeight: FontWeight.bold,
                                               color: isCurrentMonthDay
                                                   ? AppColors.textPrimary
@@ -449,7 +449,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                                         totalSpent,
                                                       ),
                                                       style: TextStyle(
-                                                        fontSize: 9.5,
+                                                        fontSize: 9,
                                                         fontWeight:
                                                             FontWeight.w900,
                                                         color: AppColors
