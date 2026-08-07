@@ -12,11 +12,11 @@ import '../../../groups/domain/group_model.dart';
 import '../../../groups/data/group_repository.dart';
 import '../../../profile/domain/profile_model.dart';
 import '../../../profile/data/profile_repository.dart';
-import '../../../auth/data/auth_repository.dart';
 import '../../domain/expense_model.dart';
 import '../../data/expense_repository.dart';
 import 'providers/add_expense_provider.dart';
 import '../../../../shared/services/categorize_service.dart';
+import '../../../../core/services/draft_service.dart';
 import '../../../../shared/widgets/dashed_rect_painter.dart';
 import 'widgets/split_sections.dart';
 final groupProfilesProvider = FutureProvider.autoDispose
@@ -72,16 +72,21 @@ class AddExpenseScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<AddExpenseScreen> createState() => _AddExpenseScreenState();
 }
-
 class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
   final _descCtrl = TextEditingController();
   final _amountCtrl = TextEditingController();
   late final TextEditingController _dateCtrl;
   DateTime _selectedDate = DateTime.now();
+  late final String _draftId;
+  final _throttler = Throttler();
 
   @override
   void initState() {
     super.initState();
+    _draftId = widget.existingExpense != null
+        ? 'edit_${widget.existingExpense!.id}'
+        : (widget.group != null ? 'group_${widget.group!.id}' : 'personal_new');
+
     if (widget.existingExpense != null) {
       _selectedDate = widget.existingExpense!.expenseDate;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -90,17 +95,64 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     } else if (widget.initialDate != null) {
       _selectedDate = widget.initialDate!;
     }
+    
     _dateCtrl = TextEditingController(text: _formatDate(_selectedDate));
+
+    _descCtrl.addListener(_saveDraft);
+    _amountCtrl.addListener(_saveDraft);
+
+    if (widget.existingExpense == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadDraft();
+      });
+    }
   }
+
+  void _saveDraft() {
+    _throttler.run(() async {
+      if (widget.existingExpense != null) return;
+      final draft = {
+        'description': _descCtrl.text,
+        'amount': _amountCtrl.text,
+        'date': _selectedDate.toIso8601String(),
+      };
+      await ref.read(draftServiceProvider).saveDraft(_draftId, draft);
+    }, delay: const Duration(seconds: 1));
+  }
+
+  Future<void> _loadDraft() async {
+    final draft = await ref.read(draftServiceProvider).getDraft(_draftId);
+    if (draft != null) {
+      setState(() {
+        if (draft['description'] != null) _descCtrl.text = draft['description'];
+        if (draft['amount'] != null) _amountCtrl.text = draft['amount'];
+        if (draft['date'] != null) {
+          _selectedDate = DateTime.parse(draft['date']);
+          _dateCtrl.text = _formatDate(_selectedDate);
+        }
+      });
+      // Sync with provider
+      final activeBillIndex = ref.read(addExpenseProvider(widget.group?.id)).activeBillIndex;
+      ref.read(addExpenseProvider(widget.group?.id).notifier).updateBill(
+            activeBillIndex,
+            description: _descCtrl.text,
+            amount: double.tryParse(_amountCtrl.text) ?? 0.0,
+          );
+    }
+  }
+
 
   String _formatDate(DateTime d) =>
       "${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}";
 
   @override
   void dispose() {
+    _descCtrl.removeListener(_saveDraft);
+    _amountCtrl.removeListener(_saveDraft);
     _descCtrl.dispose();
     _amountCtrl.dispose();
     _dateCtrl.dispose();
+    _throttler.dispose();
     super.dispose();
   }
 

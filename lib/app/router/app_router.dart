@@ -7,6 +7,7 @@ import '../../features/auth/presentation/sign_up_page.dart';
 import '../../features/auth/presentation/forgot_password_page.dart';
 import '../../features/auth/presentation/otp_verification_page.dart';
 import '../../features/auth/presentation/splash_page.dart';
+import '../../features/auth/presentation/magic_login_page.dart';
 import '../../features/calendar/presentation/calendar_page.dart';
 import '../../features/expenses/presentation/my_expenses_page.dart';
 import '../../features/expenses/presentation/view_all_expenses_page.dart';
@@ -52,7 +53,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute =
           state.matchedLocation == '/sign-in' ||
           state.matchedLocation == '/sign-up' ||
-          state.matchedLocation == '/forgot-password';
+          state.matchedLocation == '/forgot-password' ||
+          state.matchedLocation == '/magic-login';
 
       // If auth is still loading or splash delay hasn't finished, stay on or redirect to splash
       if (isLoading) {
@@ -84,6 +86,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const ForgotPasswordPage(),
       ),
       GoRoute(
+        path: '/magic-login',
+        builder: (context, state) {
+          final userId = state.uri.queryParameters['userId'] ?? '';
+          final secret = state.uri.queryParameters['secret'] ?? '';
+          return MagicLoginPage(userId: userId, secret: secret);
+        },
+      ),
+      GoRoute(
         path: '/otp',
         builder: (context, state) {
           final args = state.extra as Map<String, dynamic>? ?? {};
@@ -91,6 +101,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             userId: args['userId'] ?? '',
             email: args['email'] ?? '',
             name: args['name'] ?? '',
+            username: args['username'] ?? '',
           );
         },
       ),

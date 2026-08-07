@@ -126,18 +126,29 @@ class CalendarExpenseCard extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Text(
-                            expense.description,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: isSettled ? AppColors.textSecondary : AppColors.textPrimary,
-                              decoration: isSettled
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            children: [
+                              if (isSettled || (isGroup && currentUser != null && expense.userId != currentUser.id))
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6.0),
+                                  child: Icon(Icons.lock_outline, size: 14, color: AppColors.textSecondary),
+                                ),
+                              Expanded(
+                                child: Text(
+                                  expense.description,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: isSettled ? AppColors.textSecondary : AppColors.textPrimary,
+                                    decoration: isSettled
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Text(

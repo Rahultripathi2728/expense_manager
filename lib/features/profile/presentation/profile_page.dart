@@ -59,6 +59,18 @@ class ProfilePage extends ConsumerWidget {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
+            if (profileAsync.valueOrNull?.username != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '@${profileAsync.valueOrNull!.username}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.xxxl),
 
             // Settings items
@@ -71,6 +83,7 @@ class ProfilePage extends ConsumerWidget {
                   context,
                   ref,
                   user?.name ?? '',
+                  profile?.username ?? '',
                   profile?.upiId ?? '',
                 );
               },
@@ -305,11 +318,14 @@ class ProfilePage extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     String currentName,
+    String currentUsername,
     String currentUpiId,
   ) {
     final nameCtrl = TextEditingController(text: currentName);
+    final usernameCtrl = TextEditingController(text: currentUsername);
     final upiCtrl = TextEditingController(text: currentUpiId);
     bool loading = false;
+    String? errorMsg;
     String? upiError;
 
     showDialog(
@@ -320,9 +336,21 @@ class ProfilePage extends ConsumerWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (errorMsg != null) ...[
+                Text(errorMsg!, style: TextStyle(color: AppColors.error, fontSize: 12)),
+                const SizedBox(height: AppSpacing.sm),
+              ],
               TextField(
                 controller: nameCtrl,
                 decoration: const InputDecoration(labelText: 'Full Name'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: usernameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Username',
+                  hintText: 'lowercase, 3-20 chars',
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               TextField(
@@ -363,6 +391,19 @@ class ProfilePage extends ConsumerWidget {
                         : () async {
                             if (nameCtrl.text.trim().isEmpty) return;
                             final upi = upiCtrl.text.trim();
+                            final un = usernameCtrl.text.trim().toLowerCase();
+
+                            if (un.isEmpty) {
+                              setState(() => errorMsg = 'Username is required');
+                              return;
+                            }
+                            // need to check if Profile is imported, but we are inside the file where we can't easily check Profile.isValidUsername if not imported. Wait, Profile is not imported here.
+                            // I will use regex here to be safe
+                            if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(un)) {
+                              setState(() => errorMsg = 'Invalid username format');
+                              return;
+                            }
+
                             if (upi.isNotEmpty) {
                               final upiRegex = RegExp(r'^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$');
                               if (!upiRegex.hasMatch(upi)) {
@@ -373,6 +414,7 @@ class ProfilePage extends ConsumerWidget {
                             
                             setState(() {
                               loading = true;
+                              errorMsg = null;
                               upiError = null;
                             });
                             try {
@@ -381,10 +423,13 @@ class ProfilePage extends ConsumerWidget {
                                   .read(authStateProvider.notifier)
                                   .updateName(nameCtrl.text.trim());
                               
-                              // Update UPI ID in Profile
+                              // Update Profile (Username and UPI ID)
                               final profile = ref.read(currentProfileProvider).valueOrNull;
                               if (profile != null) {
-                                final updated = profile.copyWith(upiId: upi.isEmpty ? null : upi);
+                                final updated = profile.copyWith(
+                                  username: un,
+                                  upiId: upi.isEmpty ? null : upi,
+                                );
                                 await ref
                                     .read(profileRepositoryProvider)
                                     .updateProfile(updated);

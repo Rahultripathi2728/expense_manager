@@ -6,6 +6,7 @@ import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/error_formatter.dart';
 import '../../../core/utils/throttler.dart';
+import '../../profile/domain/profile_model.dart';
 import '../data/auth_repository.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
@@ -18,6 +19,7 @@ class SignUpPage extends ConsumerStatefulWidget {
 class _SignUpPageState extends ConsumerState<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
@@ -29,6 +31,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _throttler.dispose();
@@ -44,6 +47,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
 
     try {
       final name = _nameCtrl.text.trim();
+      final username = _usernameCtrl.text.trim().toLowerCase();
       final email = _emailCtrl.text.trim();
       
       final uid = await ref
@@ -62,6 +66,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
         'userId': uid,
         'email': email,
         'name': name,
+        'username': username,
       });
     } catch (e) {
       if (mounted) setState(() => _error = ErrorFormatter.format(e));
@@ -290,6 +295,35 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                                     validator: (v) => v == null || v.trim().isEmpty
                                         ? 'Name is required'
                                         : null,
+                                  ),
+                                  const SizedBox(height: AppSpacing.lg),
+
+                                  // Username
+                                  Text(
+                                    'Username',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextFormField(
+                                    controller: _usernameCtrl,
+                                    decoration: const InputDecoration(
+                                      hintText: 'johndoe123',
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                    validator: (v) {
+                                      if (v == null || v.trim().isEmpty) return 'Username is required';
+                                      if (!Profile.isValidUsername(v.trim())) {
+                                        return '3-20 lowercase letters, numbers, or _';
+                                      }
+                                      return null;
+                                    },
                                   ),
                                   const SizedBox(height: AppSpacing.lg),
 

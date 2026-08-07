@@ -50,6 +50,37 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     }
   }
 
+  Future<void> _sendMagicLink() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      setState(() => _error = 'Please enter your email to use magic link');
+      return;
+    }
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(email)) {
+      setState(() => _error = 'Please enter a valid email address');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await ref.read(authStateProvider.notifier).sendMagicLink(email: email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Magic link sent to your email!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = ErrorFormatter.format(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   Widget _buildToggle(BuildContext context, bool isSignIn) {
     return Container(
       padding: const EdgeInsets.all(4),
@@ -353,6 +384,30 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                                           fontSize: 16,
                                         ),
                                       ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                onPressed: _loading ? null : () => _throttler.run(_sendMagicLink),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.textPrimary,
+                                  side: BorderSide(color: AppColors.border),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Sign In with Magic Link',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
                               ),
                             ),
                           ],

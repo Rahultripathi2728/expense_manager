@@ -91,6 +91,16 @@ class GroupDetailPage extends ConsumerWidget {
                     color: AppColors.textPrimary,
                   ),
                 ),
+                if (group.description?.isNotEmpty == true) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    group.description!,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.md),
 
                 // Join code card
@@ -307,6 +317,23 @@ class GroupDetailPage extends ConsumerWidget {
                               width: double.infinity,
                               child: OutlinedButton.icon(
                                 onPressed: () =>
+                                    _handleEditGroup(context, ref, group),
+                                icon: Icon(
+                                  Icons.edit_outlined,
+                                  color: AppColors.textPrimary,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  'Edit Group',
+                                  style: TextStyle(color: AppColors.textPrimary),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
                                     _handleDeleteGroup(context, ref, group),
                                 icon: Icon(
                                   Icons.delete_outline,
@@ -355,6 +382,84 @@ class GroupDetailPage extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _handleEditGroup(BuildContext context, WidgetRef ref, Group group) {
+    final nameCtrl = TextEditingController(text: group.name);
+    final descCtrl = TextEditingController(text: group.description ?? '');
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Edit Group'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Group name'),
+                autofocus: true,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: descCtrl,
+                decoration: const InputDecoration(labelText: 'Description (optional)'),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            final name = nameCtrl.text.trim();
+                            final desc = descCtrl.text.trim();
+                            if (name.isEmpty) return;
+                            
+                            setState(() => loading = true);
+                            try {
+                              await ref.read(groupRepositoryProvider).updateGroup(
+                                    group.id,
+                                    name,
+                                    desc.isEmpty ? null : desc,
+                                  );
+                              ref.invalidate(groupDetailProvider(group.id));
+                              ref.invalidate(userGroupsProvider);
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to update: $e')),
+                                );
+                              }
+                            } finally {
+                              if (context.mounted) setState(() => loading = false);
+                            }
+                          },
+                    child: loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

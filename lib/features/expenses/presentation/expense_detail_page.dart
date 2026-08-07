@@ -10,6 +10,7 @@ import '../../../core/utils/error_formatter.dart';
 import '../../../core/utils/throttler.dart';
 import '../domain/expense_model.dart';
 import '../data/expense_repository.dart';
+import '../../auth/data/auth_repository.dart';
 import '../../calendar/presentation/widgets/calendar_expense_card.dart'; // For group/profile providers
 import 'add_expense/add_expense_screen.dart';
 import 'utils/category_icon_helper.dart';
@@ -106,6 +107,10 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
         ? ref.watch(expenseSplitsProvider(expense.id))
         : const AsyncValue.data([]);
 
+    final user = ref.watch(authStateProvider).valueOrNull;
+    final isPayer = user != null && expense.userId == user.id;
+    final isLocked = expense.isSettled || !isPayer;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -114,6 +119,8 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
+          if (!isLocked) ...[
+
           IconButton(
             icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
             onPressed: () => _throttler.run(() async {
@@ -146,11 +153,12 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                 ),
               ),
             )
-          else
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: AppColors.error),
-              onPressed: _deleteExpense,
-            ),
+            else
+              IconButton(
+                icon: Icon(Icons.delete_outline, color: AppColors.error),
+                onPressed: _deleteExpense,
+              ),
+          ]
         ],
       ),
       body: SingleChildScrollView(
@@ -176,6 +184,32 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
+
+            if (expense.isSettled)
+              Container(
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Settled',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Description & Amount
             Text(

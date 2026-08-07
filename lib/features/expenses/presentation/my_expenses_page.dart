@@ -21,9 +21,12 @@ import '../../../shared/widgets/custom_error_widget.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
-final analyticsMonthProvider = StateProvider<DateTime>((ref) {
+final analyticsDateRangeProvider = StateProvider<DateTimeRange>((ref) {
   final now = DateTime.now();
-  return DateTime(now.year, now.month, 1);
+  return DateTimeRange(
+    start: DateTime(now.year, now.month, 1),
+    end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
+  );
 });
 final chartTabProvider = StateProvider<int>(
   (ref) => 0,
@@ -139,11 +142,63 @@ class _MyExpensesTab extends ConsumerWidget {
     );
   }
 
+  void _showBreakdownDialog(BuildContext context, String title, List<Expense> expenses, List<ExpenseSplit> splits, String userId) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: expenses.isEmpty
+                ? Center(
+                    child: Text('No expenses found.', style: TextStyle(color: AppColors.textSecondary)),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: expenses.length,
+                    separatorBuilder: (_, __) => const Divider(),
+                    itemBuilder: (ctx, i) {
+                      final e = expenses[i];
+                      double share = e.amount;
+                      if (e.isGroup) {
+                        final match = splits.where((s) => s.expenseId == e.id && s.userId == userId).toList();
+                        share = match.isNotEmpty ? match.first.amountOwed : 0.0;
+                      }
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.surfaceVariant,
+                          child: Icon(CategoryIconHelper.getIcon(e.category), size: 14, color: AppColors.textPrimary),
+                        ),
+                        title: Text(e.description, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(DateHelpers.formatDayMonth(e.expenseDate), style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        trailing: Text(DateHelpers.formatCurrency(share), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Close', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(themeProvider);
-    final month = ref.watch(analyticsMonthProvider);
-    final expensesAsync = ref.watch(monthlyExpensesProvider(month));
+    final dateRange = ref.watch(analyticsDateRangeProvider);
+    final expensesAsync = ref.watch(dateRangeExpensesProvider(dateRange));
     final splitsAsync = ref.watch(userSplitsProvider);
     final profileAsync = ref.watch(currentProfileProvider);
     final currentUser = ref.watch(authStateProvider).valueOrNull;
@@ -160,92 +215,57 @@ class _MyExpensesTab extends ConsumerWidget {
           // Date selection row
           Row(
             children: [
-              // Previous month
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  border: Border.all(color: AppColors.borderLight),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.chevron_left,
-                    color: AppColors.textPrimary,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      ref.read(analyticsMonthProvider.notifier).state =
-                          DateHelpers.previousMonth(month),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Current month display
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    border: Border.all(color: AppColors.borderLight),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.calendar_today_outlined,
-                        size: 16,
-                        color: AppColors.textPrimary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        DateHelpers.formatMonthYear(month),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (DateHelpers.isCurrentMonth(month)) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.borderLight,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            'Now',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.bold,
+                child: GestureDetector(
+                  onTap: () async {
+                    final picked = await showDateRangePicker(
+                      context: context,
+                      initialDateRange: dateRange,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      builder: (context, child) {
+                        return Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: ColorScheme.light(
+                              primary: AppColors.textPrimary,
+                              onPrimary: AppColors.surface,
+                              onSurface: AppColors.textPrimary,
                             ),
+                          ),
+                          child: child!,
+                        );
+                      },
+                    );
+                    if (picked != null) {
+                      ref.read(analyticsDateRangeProvider.notifier).state = picked;
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.borderLight),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.calendar_today_outlined,
+                          size: 16,
+                          color: AppColors.textPrimary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${DateHelpers.formatDayMonth(dateRange.start)} - ${DateHelpers.formatDayMonth(dateRange.end)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Next month
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  border: Border.all(color: AppColors.borderLight),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.chevron_right,
-                    color: AppColors.textPrimary,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      ref.read(analyticsMonthProvider.notifier).state =
-                          DateHelpers.nextMonth(month),
                 ),
               ),
               const SizedBox(width: 8),
@@ -274,22 +294,40 @@ class _MyExpensesTab extends ConsumerWidget {
             ),
             error: (err, _) => CustomErrorWidget(
               error: err,
-              onRetry: () => ref.invalidate(monthlyExpensesProvider(month)),
+              onRetry: () => ref.invalidate(dateRangeExpensesProvider(dateRange)),
             ),
             data: (expenses) {
+              final analyticsExpenses = expenses.where((e) => !e.isSettled).toList();
 
-              final personalTotal = expenses
-                  .where((e) => e.isPersonal)
-                  .fold<double>(0.0, (sum, e) => sum + e.amount);
-              double groupShareTotal = 0.0;
-              for (final e in expenses.where((e) => e.isGroup)) {
-                final match = userSplits
-                    .where((s) => s.expenseId == e.id && s.userId == myUserId)
-                    .toList();
-                if (match.isNotEmpty) {
-                  groupShareTotal += match.first.amountOwed;
+              final personalBreakdown = analyticsExpenses.where((e) {
+                if (e.isPersonal) return true;
+                if (e.isGroup && e.splitType == 'itemwise') {
+                  final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
+                  return match.isNotEmpty;
                 }
-              }
+                return false;
+              }).toList();
+
+              final groupBreakdown = analyticsExpenses.where((e) {
+                if (e.isGroup && e.splitType != 'itemwise') {
+                  final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
+                  return match.isNotEmpty;
+                }
+                return false;
+              }).toList();
+
+              final totalBreakdown = [...personalBreakdown, ...groupBreakdown];
+
+              double personalTotal = personalBreakdown.fold<double>(0.0, (sum, e) {
+                if (e.isPersonal) return sum + e.amount;
+                final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
+                return sum + match.first.amountOwed;
+              });
+
+              double groupShareTotal = groupBreakdown.fold<double>(0.0, (sum, e) {
+                final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
+                return sum + match.first.amountOwed;
+              });
 
               final totalSpent = personalTotal + groupShareTotal;
 
@@ -451,13 +489,15 @@ class _MyExpensesTab extends ConsumerWidget {
                     child: Column(
                       children: [
                         // Personal Card
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.borderLight),
-                          ),
+                        GestureDetector(
+                          onTap: () => _showBreakdownDialog(context, 'Personal Spend', personalBreakdown, userSplits, myUserId ?? ''),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.borderLight),
+                            ),
                           child: Row(
                             children: [
                               Column(
@@ -500,13 +540,15 @@ class _MyExpensesTab extends ConsumerWidget {
                         ),
                         const SizedBox(height: 12),
                         // Group Share Card
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.borderLight),
-                          ),
+                        GestureDetector(
+                          onTap: () => _showBreakdownDialog(context, 'My Share (Group)', groupBreakdown, userSplits, myUserId ?? ''),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.borderLight),
+                            ),
                           child: Row(
                             children: [
                               Column(
@@ -549,13 +591,15 @@ class _MyExpensesTab extends ConsumerWidget {
                         ),
                         const SizedBox(height: 12),
                         // Total Card
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.borderLight),
-                          ),
+                        GestureDetector(
+                          onTap: () => _showBreakdownDialog(context, 'Total Spent', totalBreakdown, userSplits, myUserId ?? ''),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.borderLight),
+                            ),
                           child: Row(
                             children: [
                               Column(
@@ -670,14 +714,14 @@ class _MyExpensesTab extends ConsumerWidget {
                   // Render Selected Chart
                   if (chartTab == 0)
                     DailyTrendChart(
-                      expenses: expenses,
+                      expenses: analyticsExpenses,
                       userSplits: userSplits,
                       currentUserId: myUserId ?? '',
-                      month: month,
+                      dateRange: dateRange,
                     )
                   else
                     CategoryDistributionList(
-                      expenses: expenses,
+                      expenses: analyticsExpenses,
                       userSplits: userSplits,
                       currentUserId: myUserId ?? '',
                     ),
@@ -863,24 +907,25 @@ class DailyTrendChart extends StatelessWidget {
   final List<Expense> expenses;
   final List<ExpenseSplit> userSplits;
   final String currentUserId;
-  final DateTime month;
+  final DateTimeRange dateRange;
 
   const DailyTrendChart({
     super.key,
     required this.expenses,
     required this.userSplits,
     required this.currentUserId,
-    required this.month,
+    required this.dateRange,
   });
 
   @override
   Widget build(BuildContext context) {
-    final days = DateHelpers.daysInMonth(month);
+    final start = dateRange.start;
+    final days = dateRange.end.difference(start).inDays + 1;
     final List<FlSpot> personalSpots = [];
     final List<FlSpot> groupSpots = [];
 
-    for (int d = 1; d <= days; d++) {
-      final dayDate = DateTime(month.year, month.month, d);
+    for (int d = 0; d < days; d++) {
+      final dayDate = start.add(Duration(days: d));
       final dayExps = expenses
           .where((e) => DateHelpers.isSameDay(e.expenseDate, dayDate))
           .toList();
@@ -896,12 +941,16 @@ class DailyTrendChart extends StatelessWidget {
               .where((s) => s.expenseId == e.id && s.userId == currentUserId)
               .toList();
           if (match.isNotEmpty) {
-            groupDay += match.first.amountOwed;
+            if (e.splitType == 'itemwise') {
+              personalDay += match.first.amountOwed;
+            } else {
+              groupDay += match.first.amountOwed;
+            }
           }
         }
       }
-      personalSpots.add(FlSpot(d.toDouble(), personalDay));
-      groupSpots.add(FlSpot(d.toDouble(), groupDay));
+      personalSpots.add(FlSpot(d.toDouble() + 1, personalDay));
+      groupSpots.add(FlSpot(d.toDouble() + 1, groupDay));
     }
 
     double maxVal = 1000;
@@ -1052,8 +1101,8 @@ class DailyTrendChart extends StatelessWidget {
                         tooltipBorder: BorderSide(color: AppColors.borderLight),
                         getTooltipItems: (touchedSpots) {
                           return touchedSpots.map((spot) {
-                            final dateStr =
-                                '${spot.x.toInt().toString().padLeft(2, '0')} ${DateFormat('MMM').format(month)}';
+                            final dateObj = start.add(Duration(days: spot.x.toInt() - 1));
+                            final dateStr = '${dateObj.day.toString().padLeft(2, '0')} ${DateFormat('MMM').format(dateObj)}';
                             return LineTooltipItem(
                               '$dateStr\nTotal: ${DateHelpers.formatCurrency(spot.y)}',
                               TextStyle(

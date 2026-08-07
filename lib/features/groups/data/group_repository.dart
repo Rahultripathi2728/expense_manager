@@ -15,11 +15,12 @@ class GroupRepository {
 
   GroupRepository(this._tablesDB);
 
-  Future<Group> createGroup(String name, String userId) async {
+  Future<Group> createGroup(String name, String? description, String userId) async {
     final joinCode = ID.custom(_generateJoinCode());
     final groupId = ID.unique();
     final groupData = {
       'name': name,
+      'description': description,
       'joinCode': joinCode,
       'createdBy': userId,
       'createdAt': DateTime.now().toIso8601String(),
@@ -137,6 +138,23 @@ class GroupRepository {
     );
 
     return memberships.rows.map((d) => GroupMember.fromMap(d.dataWithId)).toList();
+  }
+
+  Future<void> updateGroup(String groupId, String name, String? description) async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('No internet connection.');
+    }
+    
+    await _tablesDB.updateRow(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.groupsCollection,
+      rowId: groupId,
+      data: {
+        'name': name,
+        'description': description,
+      },
+    );
   }
 
   Future<void> leaveGroup(String groupId, String userId) async {

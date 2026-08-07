@@ -72,10 +72,33 @@ class AuthRepository {
     return userModel;
   }
 
+  /// Send a Magic Link to the user's email.
+  Future<void> sendMagicLink({required String email}) async {
+    await _account.createMagicURLToken(
+      userId: ID.unique(),
+      email: email,
+      url: 'https://expense-manager.app/magic-login',
+    );
+  }
+
+  /// Verify a Magic Link and login.
+  Future<UserModel> verifyMagicLink({
+    required String userId,
+    required String secret,
+  }) async {
+    await _account.createSession(userId: userId, secret: secret);
+    final user = await _account.get();
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
+  }
+
   /// Sign up with email, password, and full name.
   /// Creates a profile document after account creation.
   Future<UserModel> signUp({
     required String name,
+    required String username,
     required String email,
     required String password,
   }) async {
@@ -97,6 +120,7 @@ class AuthRepository {
       data: {
         'userId': user.$id,
         'fullName': name,
+        'username': username,
         'avatarUrl': null,
         'monthlyBudget': 0.0,
         'createdAt': DateTime.now().toIso8601String(),
@@ -142,6 +166,7 @@ class AuthRepository {
     required String userId,
     required String email,
     required String name,
+    required String username,
     required String otpCode,
   }) async {
     await _account.createSession(
@@ -156,6 +181,7 @@ class AuthRepository {
       data: {
         'userId': userId,
         'fullName': name,
+        'username': username,
         'avatarUrl': null,
         'monthlyBudget': 0.0,
         'createdAt': DateTime.now().toIso8601String(),
@@ -286,14 +312,33 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     }
   }
 
+  Future<void> sendMagicLink({required String email}) async {
+    await _repo.sendMagicLink(email: email);
+  }
+
+  Future<void> verifyMagicLink({
+    required String userId,
+    required String secret,
+  }) async {
+    try {
+      final user = await _repo.verifyMagicLink(userId: userId, secret: secret);
+      state = AsyncValue.data(user);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+
   Future<void> signUp({
     required String name,
+    required String username,
     required String email,
     required String password,
   }) async {
     try {
       final user = await _repo.signUp(
         name: name,
+        username: username,
         email: email,
         password: password,
       );
@@ -321,6 +366,7 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     required String userId,
     required String email,
     required String name,
+    required String username,
     required String otpCode,
   }) async {
     try {
@@ -328,6 +374,7 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
         userId: userId,
         email: email,
         name: name,
+        username: username,
         otpCode: otpCode,
       );
       state = AsyncValue.data(user);

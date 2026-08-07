@@ -223,6 +223,7 @@ class GroupsPage extends ConsumerWidget {
 
   void _showCreateGroup(BuildContext context, WidgetRef ref) {
     final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
     bool loading = false;
 
     showDialog(
@@ -247,6 +248,14 @@ class GroupsPage extends ConsumerWidget {
                   hintText: 'Enter group name',
                 ),
                 autofocus: true,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: descCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Description (optional)',
+                  hintText: 'What is this group for?',
+                ),
               ),
             ],
           ),
@@ -277,6 +286,7 @@ class GroupsPage extends ConsumerWidget {
                         ? null
                         : () async {
                             final name = nameCtrl.text.trim();
+                            final desc = descCtrl.text.trim();
                             if (name.isEmpty) return;
       
                             final user = ref.read(authStateProvider).valueOrNull;
@@ -286,7 +296,7 @@ class GroupsPage extends ConsumerWidget {
                             try {
                               await ref
                                   .read(groupRepositoryProvider)
-                                  .createGroup(name, user.id);
+                                  .createGroup(name, desc.isEmpty ? null : desc, user.id);
                               ref.invalidate(userGroupsProvider);
                               if (context.mounted) Navigator.pop(context);
                             } finally {

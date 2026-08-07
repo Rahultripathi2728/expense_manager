@@ -11,12 +11,14 @@ class OtpVerificationPage extends ConsumerStatefulWidget {
   final String userId;
   final String email;
   final String name;
+  final String username;
 
   const OtpVerificationPage({
     super.key,
     required this.userId,
     required this.email,
     required this.name,
+    required this.username,
   });
 
   @override
@@ -73,6 +75,7 @@ class _OtpVerificationPageState extends ConsumerState<OtpVerificationPage> {
             userId: widget.userId,
             email: widget.email,
             name: widget.name,
+            username: widget.username,
             otpCode: code,
           );
       // Navigation is handled automatically by the app_router reacting to auth state change
