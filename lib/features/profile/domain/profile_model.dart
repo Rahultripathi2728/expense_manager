@@ -59,4 +59,8 @@ class Profile {
       createdAt: createdAt,
     );
   }
+
+  static bool isValidUsername(String username) {
+    return RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username);
+  }
 }

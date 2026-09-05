@@ -1,5 +1,5 @@
 import 'dart:convert';
-// ignore: avoid_web_libraries_in_flutter
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 import 'package:csv/csv.dart';
 import 'package:pdf/pdf.dart';
@@ -303,8 +303,7 @@ Future<void> exportStatementToPDF(StatementExportData data) async {
                     ),
                     if (data.groups.isNotEmpty)
                       pw.Text(
-                        'GROUPS (${data.groups.length}): ' +
-                            data.groups.map((g) => '${g.name} (${g.memberCount})').join(', '),
+                        'GROUPS (${data.groups.length}): ${data.groups.map((g) => '${g.name} (${g.memberCount})').join(', ')}',
                         style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
                       ),
                   ],
@@ -630,7 +629,7 @@ Future<void> exportStatementToPDF(StatementExportData data) async {
                 '',
                 data.scope == 'expenses'
                     ? 'Rs. ${data.totalSpent.toStringAsFixed(2)}'
-                    : (data.netBalance >= 0 ? '+' : '-') + 'Rs. ${data.netBalance.abs().toStringAsFixed(2)}',
+                    : '${data.netBalance >= 0 ? '+' : '-'}Rs. ${data.netBalance.abs().toStringAsFixed(2)}',
               ],
             ],
           ),
