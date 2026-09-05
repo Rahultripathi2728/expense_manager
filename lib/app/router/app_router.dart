@@ -12,10 +12,21 @@ import '../../features/calendar/presentation/calendar_page.dart';
 import '../../features/expenses/presentation/my_expenses_page.dart';
 import '../../features/expenses/presentation/view_all_expenses_page.dart';
 import '../../features/expenses/presentation/expense_detail_page.dart';
-import '../../features/settlement/presentation/settlement_page.dart';
+import '../../features/expenses/presentation/personal_expenses_page.dart';
+import '../../features/expenses/presentation/group_share_selection_page.dart';
+import '../../features/expenses/presentation/cash_flow_ledger_page.dart';
+import '../../features/expenses/presentation/export/statement_export_screen.dart';
+import '../../features/settlement/presentation/settlement_history_page.dart';
+import '../../features/settlement/presentation/settlement_history_detail_page.dart';
+import '../../features/settlement/domain/settlement_model.dart';
+import '../../features/settlement/presentation/bill_selection_page.dart';
+import '../../features/settlement/presentation/payment_summary_page.dart';
 import '../../features/expenses/domain/expense_model.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
+import '../../features/groups/domain/group_model.dart';
+import '../../features/items/presentation/items_page.dart';
+import '../../features/items/presentation/add_item_screen.dart';
 import '../../features/profile/presentation/profile_page.dart';
 import '../../features/notifications/presentation/notifications_page.dart';
 import '../../shared/widgets/app_shell.dart';
@@ -129,15 +140,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
-            path: '/settlement',
-            pageBuilder: (_, state) => CustomTransitionPage(
-              key: state.pageKey,
-              child: const SettlementPage(),
-              transitionsBuilder: (_, animation, __, child) =>
-                  FadeTransition(opacity: animation, child: child),
-            ),
-          ),
-          GoRoute(
             path: '/groups',
             pageBuilder: (_, state) => CustomTransitionPage(
               key: state.pageKey,
@@ -146,10 +148,44 @@ final routerProvider = Provider<GoRouter>((ref) {
                   FadeTransition(opacity: animation, child: child),
             ),
           ),
+          GoRoute(
+            path: '/items',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: state.pageKey,
+              child: const ItemsPage(),
+              transitionsBuilder: (_, animation, __, child) =>
+                  FadeTransition(opacity: animation, child: child),
+            ),
+          ),
+          GoRoute(
+            path: '/settlement',
+            redirect: (_, __) => '/groups',
+          ),
         ],
       ),
 
       // ── Detail Routes ──
+      GoRoute(
+        path: '/personal-expenses',
+        builder: (_, state) {
+          final month = state.extra as DateTime? ?? DateTime.now();
+          return PersonalExpensesPage(month: month);
+        },
+      ),
+      GoRoute(
+        path: '/group-share-selection',
+        builder: (_, state) {
+          final month = state.extra as DateTime? ?? DateTime.now();
+          return GroupShareSelectionPage(month: month);
+        },
+      ),
+      GoRoute(
+        path: '/cash-flow',
+        builder: (_, state) {
+          final month = state.extra as DateTime? ?? DateTime.now();
+          return CashFlowLedgerPage(month: month);
+        },
+      ),
       GoRoute(
         path: '/group/:groupId',
         builder: (_, state) =>
@@ -165,6 +201,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const ViewAllExpensesPage(),
       ),
 
+
       GoRoute(
         path: '/expense-detail',
         builder: (_, state) {
@@ -178,6 +215,61 @@ final routerProvider = Provider<GoRouter>((ref) {
             );
           }
           return ExpenseDetailPage(expense: expense);
+        },
+      ),
+      GoRoute(
+        path: '/bill-selection',
+        builder: (_, state) {
+          final args = state.extra as Map<String, dynamic>? ?? {};
+          return BillSelectionPage(
+            groupId: args['groupId'] ?? '',
+            unsettledExpenses: args['expenses'] as List<Expense>? ?? [],
+          );
+        },
+      ),
+      GoRoute(
+        path: '/payment-summary',
+        builder: (_, state) {
+          final args = state.extra as Map<String, dynamic>? ?? {};
+          return PaymentSummaryPage(
+            groupId: args['groupId'] ?? '',
+            selectedExpenses: args['expenses'] as List<Expense>? ?? [],
+          );
+        },
+      ),
+      GoRoute(
+        path: '/settlement-history',
+        builder: (_, state) {
+          final groupId = state.extra as String? ?? '';
+          return SettlementHistoryPage(groupId: groupId);
+        },
+      ),
+      GoRoute(
+        path: '/settlement-history-detail',
+        builder: (_, state) {
+          final args = state.extra as Map<String, dynamic>? ?? {};
+          return SettlementHistoryDetailPage(
+            settlement: args['settlement'] as Settlement,
+            fromName: args['fromName'] as String? ?? '',
+            toName: args['toName'] as String? ?? '',
+          );
+        },
+      ),
+      GoRoute(
+        path: '/add-item',
+        builder: (_, state) {
+          final group = state.extra as Group?;
+          return AddItemScreen(group: group);
+        },
+      ),
+      GoRoute(
+        path: '/export-statement',
+        builder: (_, state) {
+          final args = state.extra as Map<String, dynamic>?;
+          return StatementExportScreen(
+            initialMonth: args?['month'] as DateTime?,
+            initialDateRange: args?['dateRange'] as DateTimeRange?,
+          );
         },
       ),
     ],

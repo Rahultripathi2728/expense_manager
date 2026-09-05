@@ -23,13 +23,13 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="expense_manager">
+  <meta name="apple-mobile-web-app-title" content="Split Pro">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>expense_manager</title>
+  <title>Split Pro</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
@@ -42,5 +42,22 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Safeguard: If DWDS does not resume/run main automatically (e.g. after manual browser refresh or idle session),
+    // trigger $dartRunMain so localhost never stays stuck on a blank white screen.
+    window.addEventListener('load', function() {
+      var attempts = 0;
+      var timer = setInterval(function() {
+        attempts++;
+        if (typeof window['$dartRunMain'] === 'function' && !window['$dartMainExecuted']) {
+          console.log('[Split Pro] Auto-starting Flutter app from watchdog...');
+          window['$dartRunMain']();
+          clearInterval(timer);
+        } else if (window['$dartMainExecuted'] || attempts > 30) {
+          clearInterval(timer);
+        }
+      }, 200);
+    });
+  </script>
 </body>
 </html>

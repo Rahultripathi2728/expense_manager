@@ -5,38 +5,40 @@ import '../../app/theme/app_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/auth/data/auth_repository.dart';
 import '../../features/notifications/data/notification_repository.dart';
 import '../../features/profile/data/profile_repository.dart';
+import 'split_pro_logo.dart';
 
-/// Main app shell with floating expandable bottom navigation and header.
+/// Main app shell with fixed bottom navigation bar and header.
 class AppShell extends ConsumerWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
 
   static const _tabs = [
     (
-      icon: Icons.calendar_month_outlined,
-      activeIcon: Icons.calendar_month,
+      icon: Icons.calendar_today_rounded,
+      activeIcon: Icons.calendar_month_rounded,
       label: 'Calendar',
       path: '/calendar',
     ),
     (
-      icon: Icons.account_balance_wallet_outlined,
-      activeIcon: Icons.account_balance_wallet,
+      icon: Icons.receipt_long_rounded,
+      activeIcon: Icons.receipt_rounded,
       label: 'Expenses',
       path: '/expenses',
     ),
     (
-      icon: Icons.handshake_outlined,
-      activeIcon: Icons.handshake,
-      label: 'Settlement',
-      path: '/settlement',
-    ),
-    (
-      icon: Icons.group_outlined,
-      activeIcon: Icons.group,
+      icon: Icons.people_outline_rounded,
+      activeIcon: Icons.people_rounded,
       label: 'Groups',
       path: '/groups',
+    ),
+    (
+      icon: Icons.shopping_cart_outlined,
+      activeIcon: Icons.shopping_cart_rounded,
+      label: 'Items',
+      path: '/items',
     ),
   ];
 
@@ -51,9 +53,8 @@ class AppShell extends ConsumerWidget {
     ref.watch(themeProvider);
     final currentIndex = _currentIndex(context);
     final notificationsAsync = ref.watch(notificationsProvider);
-    ref.watch(
-      currentProfileProvider,
-    ); // Force profile fetch/creation on startup
+    final authUser = ref.watch(authStateProvider).valueOrNull;
+    ref.watch(currentProfileProvider); // Force profile fetch/creation on startup
     final unreadCount =
         notificationsAsync.valueOrNull?.where((n) => !n.isRead).length ?? 0;
 
@@ -63,17 +64,10 @@ class AppShell extends ConsumerWidget {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.asset(
-                'assets/app_icon.png',
-                width: 22,
-                height: 22,
-              ),
-            ),
+            const SplitProLogo(size: 26),
             const SizedBox(width: 8),
             Text(
-              'Expense Manager',
+              'Split Pro',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
@@ -88,13 +82,24 @@ class AppShell extends ConsumerWidget {
             child: Center(
               child: Builder(
                 builder: (context) {
-                  Widget bellIcon = IconButton(
-                    key: const Key('notifications_btn'),
-                    icon: Icon(
-                      Icons.notifications_outlined,
-                      color: AppColors.textPrimary,
+                  Widget bellIcon = Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceVariant,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.borderLight),
                     ),
-                    onPressed: () => context.push('/notifications'),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      key: const Key('notifications_btn'),
+                      icon: Icon(
+                        Icons.notifications_rounded,
+                        size: 20,
+                        color: unreadCount > 0 ? AppColors.primary : AppColors.textSecondary,
+                      ),
+                      onPressed: () => context.push('/notifications'),
+                    ),
                   );
 
                   if (unreadCount > 0) {
@@ -106,11 +111,11 @@ class AppShell extends ConsumerWidget {
                       duration: 450.ms,
                     ).scale(
                       begin: const Offset(1, 1),
-                      end: const Offset(1.1, 1.1),
+                      end: const Offset(1.08, 1.08),
                       duration: 200.ms,
                       curve: Curves.easeOut,
                     ).then().scale(
-                      begin: const Offset(1.1, 1.1),
+                      begin: const Offset(1.08, 1.08),
                       end: const Offset(1, 1),
                       duration: 200.ms,
                       curve: Curves.easeIn,
@@ -119,8 +124,12 @@ class AppShell extends ConsumerWidget {
 
                   return Badge(
                     isLabelVisible: unreadCount > 0,
-                    label: Text('$unreadCount'),
-                    backgroundColor: Colors.red,
+                    label: Text(
+                      '$unreadCount',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+                    ),
+                    backgroundColor: AppColors.error,
+                    offset: const Offset(-2, 2),
                     child: bellIcon,
                   );
                 },
@@ -132,17 +141,36 @@ class AppShell extends ConsumerWidget {
             child: GestureDetector(
               onTap: () => context.push('/profile'),
               child: Container(
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primary,
+                      const Color(0xFF41A5FF),
+                    ],
+                  ),
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.border, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor: AppColors.surface,
-                  child: Icon(
-                    Icons.person_outline,
-                    size: 18,
-                    color: AppColors.textPrimary,
+                child: Center(
+                  child: Text(
+                    authUser?.name.isNotEmpty == true
+                        ? authUser!.name[0].toUpperCase()
+                        : 'U',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ),
@@ -150,29 +178,19 @@ class AppShell extends ConsumerWidget {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          child,
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _ExpandableBottomNav(
-              tabs: _tabs,
-              currentIndex: currentIndex,
-              onTap: (path) => context.go(path),
-            ),
-          ),
-        ],
+      body: child,
+      bottomNavigationBar: _ExpandableBottomNav(
+        tabs: _tabs,
+        currentIndex: currentIndex,
+        onTap: (path) => context.go(path),
       ),
     );
   }
 }
 
-/// A premium floating expandable bottom navigation bar with spring animations.
+/// A fixed persistent bottom navigation bar with full spring animations and sliding active tab pill.
 class _ExpandableBottomNav extends StatefulWidget {
-  final List<({IconData icon, IconData activeIcon, String label, String path})>
-  tabs;
+  final List<({IconData icon, IconData activeIcon, String label, String path})> tabs;
   final int currentIndex;
   final ValueChanged<String> onTap;
 
@@ -190,13 +208,9 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
   double _getTabWidth(int index, double totalWidth, int currentIndex) {
     const double activeWeight = 1.8;
     const double inactiveWeight = 1.0;
-    
-    // Total weight = (1 active tab * 1.8) + (3 inactive tabs * 1.0) = 4.8
     final double totalWeight = activeWeight + (widget.tabs.length - 1) * inactiveWeight;
-    
     final bool isActive = index == currentIndex;
     final double weight = isActive ? activeWeight : inactiveWeight;
-    
     return totalWidth * (weight / totalWeight);
   }
 
@@ -210,139 +224,125 @@ class _ExpandableBottomNavState extends State<_ExpandableBottomNav> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 20.0, left: 16, right: 16),
-            child: Container(
-              height: 64, // Fixed height for the navigation bar
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: AppColors.borderLight, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.textPrimary.withValues(alpha: 0.08),
-                    blurRadius: 24,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final totalWidth = constraints.maxWidth;
-                  final activeWidth = _getTabWidth(widget.currentIndex, totalWidth, widget.currentIndex);
-                  final activeLeft = _getActiveLeft(totalWidth, widget.currentIndex);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.borderLight, width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final totalWidth = constraints.maxWidth;
+              final activeWidth = _getTabWidth(widget.currentIndex, totalWidth, widget.currentIndex);
+              final activeLeft = _getActiveLeft(totalWidth, widget.currentIndex);
 
-                  return Stack(
-                    children: [
-                      // Sliding Background
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeOutBack,
-                        left: activeLeft,
-                        top: 0,
-                        bottom: 0,
-                        width: activeWidth,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.textPrimary,
-                            borderRadius: BorderRadius.circular(26),
-                          ),
-                        ),
+              return Stack(
+                children: [
+                  // Sliding Background Pill with spring curve
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 350),
+                    curve: Curves.easeOutBack,
+                    left: activeLeft,
+                    top: 2,
+                    bottom: 2,
+                    width: activeWidth,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      // Tab Buttons
-                      Row(
-                        children: List.generate(widget.tabs.length, (index) {
-                          final tab = widget.tabs[index];
-                          final isActive = index == widget.currentIndex;
-                          final currentTabWidth = _getTabWidth(index, totalWidth, widget.currentIndex);
+                    ),
+                  ),
+                  // Tab Buttons
+                  Row(
+                    children: List.generate(widget.tabs.length, (index) {
+                      final tab = widget.tabs[index];
+                      final isActive = index == widget.currentIndex;
+                      final currentTabWidth = _getTabWidth(index, totalWidth, widget.currentIndex);
 
-                          return SizedBox(
-                            width: currentTabWidth,
-                            child: GestureDetector(
-                              onTap: () {
-                                HapticHelper.selectionClick();
-                                widget.onTap(tab.path);
-                              },
-                              behavior: HitTestBehavior.opaque,
-                              child: Center(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 300),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 8,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      AnimatedScale(
-                                        scale: isActive ? 1.1 : 1.0,
-                                        duration: const Duration(
-                                          milliseconds: 300,
-                                        ),
-                                        curve: Curves.easeOutBack,
-                                        child: Icon(
-                                          isActive ? tab.activeIcon : tab.icon,
-                                          color: isActive
-                                              ? AppColors.surface
-                                              : AppColors.textSecondary,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      AnimatedContainer(
-                                        duration: const Duration(
-                                          milliseconds: 300,
-                                        ),
-                                        curve: Curves.easeInOutCubic,
-                                        width: isActive ? 64.0 : 0.0,
-                                        child: ClipRect(
-                                          child: isActive
-                                              ? Padding(
-                                                  padding: const EdgeInsets.only(
-                                                    left: 6,
-                                                  ),
-                                                  child: Text(
-                                                    tab.label,
-                                                    style: TextStyle(
-                                                      color: AppColors.surface,
-                                                      fontWeight: FontWeight.w700,
-                                                      fontSize: 11,
-                                                      letterSpacing: -0.2,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.fade,
-                                                    softWrap: false,
-                                                  ),
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                      return SizedBox(
+                        width: currentTabWidth,
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticHelper.selectionClick();
+                            widget.onTap(tab.path);
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 6,
                                 ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    AnimatedScale(
+                                      scale: isActive ? 1.12 : 1.0,
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeOutBack,
+                                      child: Icon(
+                                        isActive ? tab.activeIcon : tab.icon,
+                                        color: isActive
+                                            ? AppColors.primary
+                                            : AppColors.textSecondary,
+                                        size: 21,
+                                      ),
+                                    ),
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOutCubic,
+                                      width: isActive ? 68.0 : 0.0,
+                                      child: ClipRect(
+                                        child: isActive
+                                            ? Padding(
+                                                padding: const EdgeInsets.only(left: 6),
+                                                child: Text(
+                                                  tab.label,
+                                                  style: TextStyle(
+                                                    color: AppColors.primary,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 12,
+                                                    letterSpacing: -0.2,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.fade,
+                                                  softWrap: false,
+                                                ),
+                                              )
+                                            : const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          );
-                        }),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-      ],
+      ),
     );
   }
 }

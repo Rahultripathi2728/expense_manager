@@ -19,15 +19,20 @@ class ThemeNotifier extends Notifier<ThemeMode> {
     _updateAppColors(mode);
   }
 
+  void toggleTheme() {
+    if (state == ThemeMode.dark) {
+      setTheme(ThemeMode.light);
+    } else {
+      setTheme(ThemeMode.dark);
+    }
+  }
+
   void _updateAppColors(ThemeMode mode) {
     if (mode == ThemeMode.dark) {
       AppColors.isDark = true;
     } else if (mode == ThemeMode.light) {
       AppColors.isDark = false;
     } else {
-      // For system, we ideally need to check the system brightness.
-      // But for static colors, we will rely on a basic check or just set it based on current binding if available.
-      // A better way is updating it in the root widget with MediaQuery, but for now we set it to false and let the root widget override if needed.
       AppColors.isDark = false;
     }
   }

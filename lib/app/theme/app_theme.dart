@@ -4,19 +4,32 @@ import 'app_typography.dart';
 import 'app_spacing.dart';
 
 /// App-wide Material 3 theme configuration.
-/// Premium Light Mode with grayscale palette.
+/// Premium Light + Dark Mode with grayscale palette.
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get theme => ThemeData(
+  static ThemeData get lightTheme {
+    AppColors.isDark = false;
+    return _buildTheme(Brightness.light);
+  }
+
+  static ThemeData get darkTheme {
+    AppColors.isDark = true;
+    return _buildTheme(Brightness.dark);
+  }
+
+  /// Legacy getter — maps to lightTheme for backward compat
+  static ThemeData get theme => lightTheme;
+
+  static ThemeData _buildTheme(Brightness brightness) => ThemeData(
     useMaterial3: true,
-    brightness: Brightness.light,
+    brightness: brightness,
     scaffoldBackgroundColor: AppColors.background,
     textTheme: AppTypography.textTheme.apply(
       bodyColor: AppColors.textPrimary,
       displayColor: AppColors.textPrimary,
     ),
-    colorScheme: ColorScheme.light(
+    colorScheme: (brightness == Brightness.dark ? ColorScheme.dark : ColorScheme.light)(
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
       secondary: AppColors.primaryMuted,
@@ -72,13 +85,12 @@ class AppTheme {
       }),
     ),
 
-    // ── Cards ──
     cardTheme: CardThemeData(
       color: AppColors.surface,
-      elevation: 0,
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.1),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        side: BorderSide(color: AppColors.border, width: 1),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       margin: EdgeInsets.zero,
     ),
@@ -212,9 +224,10 @@ class AppTheme {
 
     // ── Snackbar ──
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.surfaceElevated,
+      backgroundColor: const Color(0xFF1E293B),
       contentTextStyle: AppTypography.textTheme.bodyMedium?.copyWith(
-        color: AppColors.textPrimary,
+        color: Colors.white,
+        fontWeight: FontWeight.w500,
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),

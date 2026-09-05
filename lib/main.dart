@@ -24,6 +24,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PaintingBinding.instance.imageCache.clear();
+  PaintingBinding.instance.imageCache.clearLiveImages();
 
   if (!kIsWeb) {
     try {
@@ -37,12 +39,12 @@ void main() async {
   // Catch Flutter framework errors
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    debugPrint('Flutter Error: \${details.exception}');
+    debugPrint('Flutter Error: ${details.exception}');
   };
 
   // Catch asynchronous errors
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('Async Error: \$error\\n\$stack');
+    debugPrint('Async Error: $error\n$stack');
     return true;
   };
 
@@ -62,16 +64,16 @@ class ExpenseManagerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
-    final themeMode = ref.watch(themeProvider);
+    ref.watch(themeProvider);
     ref.watch(realtimeInitProvider); // Keep realtime connection alive
     ref.watch(pushNotificationInitProvider); // Keep push notifications alive
 
     return MaterialApp.router(
-      title: 'Expense Manager',
+      title: 'Split Pro',
       debugShowCheckedModeBanner: false,
-      themeMode: themeMode,
-      theme: AppTheme.theme,
-      darkTheme: AppTheme.theme, // AppTheme returns dynamic colors based on isDark
+      themeMode: ThemeMode.light,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.lightTheme,
       routerConfig: router,
       builder: (context, child) {
         return StreamBuilder<List<ConnectivityResult>>(

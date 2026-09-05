@@ -3,6 +3,8 @@ import '../../expenses/domain/expense_model.dart';
 import '../../expenses/domain/expense_split_model.dart';
 import '../../expenses/domain/expense_item_model.dart';
 
+import '../domain/settlement_model.dart';
+
 /// Transaction representing a simplified payment between two users.
 class SimplifiedTransaction {
   final String fromUserId;
@@ -13,6 +15,23 @@ class SimplifiedTransaction {
     required this.fromUserId,
     required this.toUserId,
     required this.amount,
+  });
+}
+
+/// Result of per-expense split balance calculation.
+class ExpenseSplitBalanceResult {
+  final Map<String, double> netBalances;
+  final Map<String, double> paidAmounts;
+  final Map<String, double> shareAmounts;
+  final List<Expense> unsettledExpenses;
+  final List<SimplifiedTransaction> transactions;
+
+  const ExpenseSplitBalanceResult({
+    required this.netBalances,
+    required this.paidAmounts,
+    required this.shareAmounts,
+    required this.unsettledExpenses,
+    required this.transactions,
   });
 }
 
@@ -49,44 +68,182 @@ class BalanceCalculator {
     return 0;
   }
 
-  /// 7.2 — Group net balance per member.
-  /// Returns a map of userId → net balance.
-  /// net > 0 means the group owes the user.
-  /// net < 0 means the user owes the group.
+  /// Accurate per-expense split balance calculation.
+  /// Evaluates each split: Remaining = AmountOwed - TotalSettledForThisExpense.
+  /// If any debtor still has Remaining > 0, the expense is marked as unsettled.
+  /// Solves multi-person partial settlements cleanly and permanently.
+  static ExpenseSplitBalanceResult calculateExpenseSplitBalances({
+    required List<Expense> expenses,
+    required List<ExpenseSplit> allSplits,
+    required List<Settlement> settlements,
+    required List<String> memberUserIds,
+  }) {
+    final Map<String, double> netBalances = {for (var id in memberUserIds) id: 0.0};
+    final Map<String, double> paidMap = {for (var id in memberUserIds) id: 0.0};
+    final Map<String, double> shareMap = {for (var id in memberUserIds) id: 0.0};
+    final List<Expense> unsettledExpenses = [];
+
+    // Filter out expenses that are already archived/settled
+    final activeExpenses = expenses.where((e) => !e.isSettled).toList();
+
+    for (final exp in activeExpenses) {
+      final payerId = exp.userId;
+      final expSplits = allSplits.where((s) => s.expenseId == exp.id && s.isIncluded).toList();
+
+      bool expHasOutstanding = false;
+
+      if (expSplits.isNotEmpty) {
+        for (final split in expSplits) {
+          final debtorId = split.userId;
+          if (debtorId == payerId) {
+            // Payer's own share is paid by definition
+            continue;
+          }
+
+          final owed = split.amountOwed;
+
+          // Find settlements from this debtor to this payer for this specific expense
+          final settledAmount = settlements
+              .where((s) =>
+                  s.fromUserId == debtorId &&
+                  s.toUserId == payerId &&
+                  s.settledExpenseIds.contains(exp.id))
+              .fold<double>(0.0, (sum, s) => sum + s.amount);
+
+          final remaining = owed - settledAmount;
+          if (remaining > AppConstants.splitEpsilon) {
+            expHasOutstanding = true;
+            netBalances[debtorId] = (netBalances[debtorId] ?? 0.0) - remaining;
+            netBalances[payerId] = (netBalances[payerId] ?? 0.0) + remaining;
+            shareMap[debtorId] = (shareMap[debtorId] ?? 0.0) + remaining;
+            paidMap[payerId] = (paidMap[payerId] ?? 0.0) + remaining;
+          }
+        }
+      } else if (memberUserIds.isNotEmpty) {
+        // Fallback for legacy expenses with no stored splits
+        final splitAmt = exp.amount / memberUserIds.length;
+        for (final mId in memberUserIds) {
+          if (mId == payerId) continue;
+          final settledAmount = settlements
+              .where((s) =>
+                  s.fromUserId == mId &&
+                  s.toUserId == payerId &&
+                  s.settledExpenseIds.contains(exp.id))
+              .fold<double>(0.0, (sum, s) => sum + s.amount);
+          final remaining = splitAmt - settledAmount;
+          if (remaining > AppConstants.splitEpsilon) {
+            expHasOutstanding = true;
+            netBalances[mId] = (netBalances[mId] ?? 0.0) - remaining;
+            netBalances[payerId] = (netBalances[payerId] ?? 0.0) + remaining;
+            shareMap[mId] = (shareMap[mId] ?? 0.0) + remaining;
+            paidMap[payerId] = (paidMap[payerId] ?? 0.0) + remaining;
+          }
+        }
+      }
+
+      if (expHasOutstanding) {
+        unsettledExpenses.add(exp);
+      }
+    }
+
+    // Process any direct cash settlements that were not tied to specific expense IDs
+    for (final s in settlements) {
+      if (s.settledExpenseIds.isEmpty) {
+        netBalances[s.fromUserId] = (netBalances[s.fromUserId] ?? 0.0) + s.amount;
+        netBalances[s.toUserId] = (netBalances[s.toUserId] ?? 0.0) - s.amount;
+      }
+    }
+
+    // Clean up floating point epsilon
+    netBalances.forEach((k, v) {
+      if (v.abs() < AppConstants.splitEpsilon) {
+        netBalances[k] = 0.0;
+      }
+    });
+
+    final transactions = simplifyTransactions(netBalances);
+
+    return ExpenseSplitBalanceResult(
+      netBalances: netBalances,
+      paidAmounts: paidMap,
+      shareAmounts: shareMap,
+      unsettledExpenses: unsettledExpenses,
+      transactions: transactions,
+    );
+  }
+
+  /// 7.2 — Group net balance per member using Splitwise Cumulative Ledger.
+  /// Net = (PaidExpenses + SettlementsPaidOut) - (OwedSplits + SettlementsReceived)
+  /// net > 0 means the group owes the user (Gets back).
+  /// net < 0 means the user owes the group (Owes).
   static Map<String, double> calculateNetBalances({
     required List<Expense> expenses,
     required List<ExpenseSplit> allSplits,
+    List<Settlement> settlements = const [],
   }) {
     final Map<String, double> paidTotal = {};
     final Map<String, double> owedTotal = {};
+    final Map<String, double> settlementsPaidOut = {};
+    final Map<String, double> settlementsReceived = {};
 
     for (final expense in expenses) {
       if (expense.isSettled) continue;
 
       // Paid total: who paid
       paidTotal[expense.userId] =
-          (paidTotal[expense.userId] ?? 0) + expense.amount;
+          (paidTotal[expense.userId] ?? 0.0) + expense.amount;
 
       // Owed total: sum of amountOwed from splits
       final expenseSplits = allSplits
           .where((s) => s.expenseId == expense.id)
           .toList();
 
-      for (final split in expenseSplits) {
-        if (split.isIncluded) {
+      final activeSplits = expenseSplits.where((s) => s.isIncluded).toList();
+      double totalSplitOwed = 0.0;
+      for (final split in activeSplits) {
+        totalSplitOwed += split.amountOwed;
+      }
+
+      if (activeSplits.isEmpty) {
+        // Fallback: if no active splits, assume payer owes it fully to balance the ledger
+        owedTotal[expense.userId] =
+            (owedTotal[expense.userId] ?? 0.0) + expense.amount;
+      } else {
+        // Normalize to ensure total owed == expense.amount
+        for (final split in activeSplits) {
+          double normalizedOwed = split.amountOwed;
+          if (totalSplitOwed > 0.01 && (totalSplitOwed - expense.amount).abs() > 0.01) {
+            normalizedOwed = (split.amountOwed / totalSplitOwed) * expense.amount;
+          }
           owedTotal[split.userId] =
-              (owedTotal[split.userId] ?? 0) + split.amountOwed;
+              (owedTotal[split.userId] ?? 0.0) + normalizedOwed;
         }
       }
     }
 
-    // Collect all user IDs
-    final allUsers = {...paidTotal.keys, ...owedTotal.keys};
+    // Apply Settlements
+    for (final s in settlements) {
+      settlementsPaidOut[s.fromUserId] =
+          (settlementsPaidOut[s.fromUserId] ?? 0.0) + s.amount;
+      settlementsReceived[s.toUserId] =
+          (settlementsReceived[s.toUserId] ?? 0.0) + s.amount;
+    }
 
-    // net = paid - owed
+    // Collect all user IDs
+    final allUsers = {
+      ...paidTotal.keys,
+      ...owedTotal.keys,
+      ...settlementsPaidOut.keys,
+      ...settlementsReceived.keys,
+    };
+
+    // net = (paid + settlementsPaidOut) - (owed + settlementsReceived)
     final Map<String, double> net = {};
     for (final userId in allUsers) {
-      net[userId] = (paidTotal[userId] ?? 0) - (owedTotal[userId] ?? 0);
+      final totalCredit = (paidTotal[userId] ?? 0.0) + (settlementsPaidOut[userId] ?? 0.0);
+      final totalDebit = (owedTotal[userId] ?? 0.0) + (settlementsReceived[userId] ?? 0.0);
+      final balance = totalCredit - totalDebit;
+      net[userId] = balance.abs() < AppConstants.splitEpsilon ? 0.0 : balance;
     }
 
     return net;

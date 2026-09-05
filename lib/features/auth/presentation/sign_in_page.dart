@@ -6,6 +6,7 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/error_formatter.dart';
 import '../../../core/utils/throttler.dart';
 import '../data/auth_repository.dart';
+import '../../../shared/widgets/split_pro_logo.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
   const SignInPage({super.key});
@@ -175,17 +176,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.asset(
-                          'assets/app_icon.png',
-                          width: 28,
-                          height: 28,
-                        ),
-                      ),
+                      const SplitProLogo(size: 28),
                       const SizedBox(width: 8),
                       Text(
-                        'Expense Manager',
+                        'Split Pro',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(
                               fontWeight: FontWeight.bold,

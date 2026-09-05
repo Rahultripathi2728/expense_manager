@@ -1,96 +1,42 @@
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:csv/csv.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:share_plus/share_plus.dart';
+import 'export_service_stub.dart'
+    if (dart.library.html) 'export_service_web.dart'
+    if (dart.library.io) 'export_service_io.dart' as platform_export;
+
 import '../../features/expenses/domain/expense_model.dart';
-import '../utils/date_helpers.dart';
+import 'export_models.dart';
 
 class ExportService {
-  /// Exports expenses to CSV and opens the share dialog
-  static Future<void> exportToCSV(List<Expense> expenses) async {
-    List<List<dynamic>> rows = [];
+  /// Exports expenses to CSV and downloads on Web or opens the share dialog on mobile.
+  static Future<void> exportToCSV(List<Expense> expenses) =>
+      platform_export.exportToCSV(expenses);
 
-    // Header row
-    rows.add(['Date', 'Description', 'Category', 'Type', 'Amount', 'Paid By']);
+  /// Exports comprehensive financial statement to PDF with calculations & summary.
+  static Future<void> exportToPDF(
+    List<Expense> expenses, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    double totalSpent = 0.0,
+    double totalReceived = 0.0,
+    double netBalance = 0.0,
+    String? userName,
+  }) =>
+      platform_export.exportToPDF(
+        expenses,
+        title: title,
+        startDate: startDate,
+        endDate: endDate,
+        totalSpent: totalSpent,
+        totalReceived: totalReceived,
+        netBalance: netBalance,
+        userName: userName,
+      );
 
-    // Data rows
-    for (var exp in expenses) {
-      rows.add([
-        DateHelpers.formatFullDate(exp.expenseDate),
-        exp.description,
-        exp.category,
-        exp.expenseType,
-        exp.amount,
-        exp.userId,
-      ]);
-    }
+  /// Exports fully configured bank-grade PDF statement.
+  static Future<void> exportStatementToPDF(StatementExportData data) =>
+      platform_export.exportStatementToPDF(data);
 
-    String csvData = const ListToCsvConverter().convert(rows);
-
-    final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/expenses_export.csv';
-    final file = File(path);
-    await file.writeAsString(csvData);
-
-    await Share.shareXFiles([XFile(path)], text: 'Expense Report (CSV)');
-  }
-
-  /// Exports expenses to PDF and opens the share dialog
-  static Future<void> exportToPDF(List<Expense> expenses) async {
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Text(
-                'Expense Report',
-                style: pw.TextStyle(
-                  fontSize: 24,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'Generated on: ${DateHelpers.formatFullDate(DateTime.now())}',
-            ),
-            pw.SizedBox(height: 20),
-            pw.TableHelper.fromTextArray(
-              headers: ['Date', 'Description', 'Category', 'Amount'],
-              headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.white,
-              ),
-              headerDecoration: const pw.BoxDecoration(
-                color: PdfColors.blueGrey800,
-              ),
-              cellAlignment: pw.Alignment.centerLeft,
-              data: expenses.map((exp) {
-                return [
-                  DateHelpers.formatFullDate(exp.expenseDate),
-                  exp.description,
-                  exp.category,
-                  exp.amount.toStringAsFixed(2),
-                ];
-              }).toList(),
-            ),
-          ];
-        },
-      ),
-    );
-
-    final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/expenses_report.pdf';
-    final file = File(path);
-    await file.writeAsBytes(await pdf.save());
-
-    await Share.shareXFiles([XFile(path)], text: 'Expense Report (PDF)');
-  }
+  /// Exports comprehensive CSV statement.
+  static Future<void> exportStatementToCSV(StatementExportData data) =>
+      platform_export.exportStatementToCSV(data);
 }

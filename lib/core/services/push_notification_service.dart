@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,12 +24,23 @@ class PushNotificationService {
   static const String _pushTargetIdKey = 'push_target_id';
   static const String _pushDeviceTokenKey = 'push_device_token';
 
+  bool _isInitialized = false;
+  StreamSubscription<RemoteMessage>? _messageSub;
+  StreamSubscription<RemoteMessage>? _messageOpenedSub;
+  final Set<String> _recentlyHandledMessageIds = {};
+
   /// Initialize permissions, local channels, and foreground message handlers.
   Future<void> initialize() async {
     if (kIsWeb) {
       debugPrint('Push notifications are skipped on Web.');
       return;
     }
+    if (_isInitialized) {
+      debugPrint('PushNotificationService is already initialized.');
+      return;
+    }
+    _isInitialized = true;
+
     // 1. Request notification permission
     final notificationSettings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
@@ -56,7 +68,7 @@ class PushNotificationService {
     // Create android notification channel
     const androidChannel = AndroidNotificationChannel(
       'expense_manager_channel',
-      'Expense Manager Notifications',
+      'Split Pro Notifications',
       description: 'Used for expense and settlement updates.',
       importance: Importance.max,
     );
@@ -68,8 +80,9 @@ class PushNotificationService {
       await androidPlugin.requestNotificationsPermission();
     }
 
-    // 3. Listen to foreground messages
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    // 3. Listen to foreground messages (with deduplication)
+    await _messageSub?.cancel();
+    _messageSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('Foreground message received: ${message.messageId}');
       debugPrint('Payload data: ${message.data}');
       
@@ -87,8 +100,21 @@ class PushNotificationService {
       // Default fallback
       title ??= 'New Notification';
 
+      final contentKey = message.messageId ?? '${title}_${body ?? ''}';
+      if (_recentlyHandledMessageIds.contains(contentKey)) {
+        debugPrint('Duplicate foreground notification ignored: $contentKey');
+        return;
+      }
+      _recentlyHandledMessageIds.add(contentKey);
+      Future.delayed(const Duration(seconds: 5), () {
+        _recentlyHandledMessageIds.remove(contentKey);
+      });
+
+      // Consistent notification ID ensures duplicate delivery updates existing notification instead of stacking
+      final notifId = contentKey.hashCode;
+
       _localNotifications.show(
-        id: message.hashCode,
+        id: notifId,
         title: title,
         body: body ?? '',
         notificationDetails: NotificationDetails(
@@ -106,7 +132,8 @@ class PushNotificationService {
     });
 
     // 4. Handle notification clicks (app opened from notification)
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    await _messageOpenedSub?.cancel();
+    _messageOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Notification clicked to open app: ${message.data}');
       _handleNotificationClick(message.data);
     });

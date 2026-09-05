@@ -5,11 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/constants/app_constants.dart';
 import '../appwrite_client.dart';
 import '../../features/auth/data/auth_repository.dart';
-import '../../features/calendar/presentation/calendar_page.dart';
 import '../../features/expenses/data/expense_repository.dart';
 import '../../features/expenses/domain/expense_model.dart';
 import '../../features/notifications/data/notification_repository.dart';
 import '../../features/notifications/domain/notification_model.dart';
+import '../../features/groups/data/group_repository.dart';
+import '../../features/groups/presentation/group_detail_page.dart';
+import '../../features/settlement/data/settlement_repository.dart';
+import '../../features/settlement/presentation/settlement_page.dart';
+import '../../features/calendar/presentation/widgets/calendar_expense_card.dart';
 
 class RealtimeService {
   final Realtime _realtime;
@@ -23,7 +27,11 @@ class RealtimeService {
 
     final channels = [
       'databases.${AppConstants.databaseId}.collections.${AppConstants.expensesCollection}.documents',
+      'databases.${AppConstants.databaseId}.collections.${AppConstants.settlementsCollection}.documents',
+      'databases.${AppConstants.databaseId}.collections.${AppConstants.expenseSplitsCollection}.documents',
       'databases.${AppConstants.databaseId}.collections.${AppConstants.notificationsCollection}.documents',
+      'databases.${AppConstants.databaseId}.collections.${AppConstants.groupsCollection}.documents',
+      'databases.${AppConstants.databaseId}.collections.${AppConstants.groupMembersCollection}.documents',
     ];
 
     try {
@@ -32,7 +40,7 @@ class RealtimeService {
       _subscription!.stream.listen((event) {
         debugPrint('Realtime Event received on channels: ${event.channels}');
         
-        final action = event.events.first; // e.g. "databases.expense_manager_db.collections.expenses.documents.xxx.create"
+        final action = event.events.first; // e.g. "...documents.xxx.create"
         
         // Safely parse event payload (on Web it might be a LegacyJavaScriptObject)
         final Map<String, dynamic> doc;
@@ -48,18 +56,28 @@ class RealtimeService {
           doc = event.payload;
         }
 
+        // ── Expense Event ──
         if (event.channels.any((c) => c.contains(AppConstants.expensesCollection))) {
           try {
+            final groupId = doc['groupId'] as String?;
+            final id = doc['\$id'] as String? ?? '';
+
+            // Real-time invalidation of all related expense & balance providers across app
+            _ref.invalidate(userSplitsProvider);
+            _ref.invalidate(monthlyExpensesProvider);
+            _ref.invalidate(monthlyExpenseItemsProvider);
+            _ref.invalidate(userCashFlowProvider);
+
+            if (groupId != null && groupId.isNotEmpty) {
+              _ref.invalidate(groupBalancesProvider(groupId));
+              _ref.invalidate(groupAllExpensesProvider(groupId));
+            }
+
             if (action.endsWith('.delete')) {
-              final id = doc['\$id'] as String;
-              _ref.invalidate(userSplitsProvider);
               if (doc['expenseDate'] != null) {
                 final expenseDate = DateTime.parse(doc['expenseDate'] as String);
                 final monthKey = DateTime(expenseDate.year, expenseDate.month);
                 _ref.read(monthlyExpensesProvider(monthKey).notifier).deleteExpense(id);
-              } else {
-                final currentMonth = _ref.read(calendarMonthProvider);
-                _ref.invalidate(monthlyExpensesProvider(currentMonth));
               }
             } else {
               final expense = Expense.fromMap(doc);
@@ -69,27 +87,65 @@ class RealtimeService {
               
               if (action.endsWith('.create')) {
                 notifier.addExpense(expense);
-                if (expense.isGroup) {
-                  _ref.invalidate(userSplitsProvider);
-                }
               } else if (action.endsWith('.update')) {
                 notifier.updateExpense(expense);
-                if (expense.isGroup) {
-                  _ref.invalidate(userSplitsProvider);
-                }
               }
             }
           } catch (e) {
             debugPrint('Failed to process realtime expense event: $e');
-            final currentMonth = _ref.read(calendarMonthProvider);
-            _ref.invalidate(monthlyExpensesProvider(currentMonth));
+            _ref.invalidate(monthlyExpensesProvider);
             _ref.invalidate(userSplitsProvider);
+            _ref.invalidate(userCashFlowProvider);
           }
         }
+
+        // ── Settlement Event ──
+        if (event.channels.any((c) => c.contains(AppConstants.settlementsCollection))) {
+          try {
+            final groupId = doc['groupId'] as String?;
+            if (groupId != null && groupId.isNotEmpty) {
+              _ref.invalidate(groupBalancesProvider(groupId));
+              _ref.invalidate(groupAllExpensesProvider(groupId));
+            }
+            _ref.invalidate(monthlyExpensesProvider);
+            _ref.invalidate(userSplitsProvider);
+            _ref.invalidate(userCashFlowProvider);
+            debugPrint('Realtime settlement processed. Invalidate all balances and expense views.');
+          } catch (e) {
+            debugPrint('Failed to process realtime settlement event: $e');
+          }
+        }
+
+        // ── Expense Splits Event ──
+        if (event.channels.any((c) => c.contains(AppConstants.expenseSplitsCollection))) {
+          try {
+            final expenseId = doc['expenseId'] as String?;
+            if (expenseId != null && expenseId.isNotEmpty) {
+              _ref.invalidate(expenseSplitsProvider(expenseId));
+            }
+            _ref.invalidate(userSplitsProvider);
+            _ref.invalidate(monthlyExpensesProvider);
+          } catch (e) {
+            debugPrint('Failed to process realtime split event: $e');
+          }
+        }
+
+        // ── Groups / Members Event ──
+        if (event.channels.any((c) => c.contains(AppConstants.groupsCollection) || c.contains(AppConstants.groupMembersCollection))) {
+          try {
+            _ref.invalidate(userGroupsProvider);
+          } catch (_) {}
+        }
         
+        // ── Notification Event ──
         if (event.channels.any((c) => c.contains(AppConstants.notificationsCollection))) {
           try {
             final notification = NotificationModel.fromMap(doc);
+            final currentUserId = _ref.read(authStateProvider).valueOrNull?.id;
+            if (currentUserId != null && notification.userId != currentUserId) {
+              // Notification is for another user, ignore
+              return;
+            }
             final notifier = _ref.read(notificationsProvider.notifier);
             
             if (action.endsWith('.create')) {
@@ -105,7 +161,7 @@ class RealtimeService {
           }
         }
       });
-      debugPrint('Started listening to Appwrite Realtime.');
+      debugPrint('Started listening to Appwrite Realtime on all collections.');
     } catch (e) {
       debugPrint('Realtime subscription error: $e');
     }

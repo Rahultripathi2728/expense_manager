@@ -12,10 +12,10 @@ class AppSpacing {
   static const double xxxl = 48.0;
 
   // ── Border Radius ──
-  static const double radiusSm = 6.0;
-  static const double radiusMd = 10.0;
-  static const double radiusLg = 14.0;
-  static const double radiusXl = 20.0;
+  static const double radiusSm = 12.0;
+  static const double radiusMd = 16.0;
+  static const double radiusLg = 24.0;
+  static const double radiusXl = 32.0;
   static const double radiusFull = 999.0;
 
   // ── Icon Sizes ──

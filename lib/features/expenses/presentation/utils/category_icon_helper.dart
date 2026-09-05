@@ -1,41 +1,86 @@
 import 'package:flutter/material.dart';
+import '../../../../app/theme/app_colors.dart';
 
-/// Helper mapping categories to modern outlined Material Icons.
-/// Placed in presentation layer to keep CategorizeService pure-Dart server-compatible.
+/// Helper mapping categories to modern rounded Material Icons and colorful badges.
 class CategoryIconHelper {
   CategoryIconHelper._();
 
   static IconData getIcon(String category) {
-    switch (category.toLowerCase()) {
+    switch (category.toLowerCase().trim()) {
       case 'food':
-        return Icons.local_pizza_outlined;
+        return Icons.restaurant_rounded;
       case 'groceries':
-        return Icons.shopping_basket_outlined;
+        return Icons.shopping_cart_rounded;
       case 'travel':
-        return Icons.flight_takeoff_outlined;
+      case 'cab':
+      case 'taxi':
+        return Icons.directions_car_rounded;
       case 'stays':
-        return Icons.bed_outlined;
+      case 'rent':
+      case 'hotel':
+        return Icons.home_rounded;
       case 'bills':
-        return Icons.receipt_long_outlined;
+      case 'utilities':
+        return Icons.receipt_long_rounded;
       case 'subscription':
-        return Icons.credit_card_outlined;
+      case 'ott':
+        return Icons.subscriptions_rounded;
       case 'shopping':
-        return Icons.local_mall_outlined;
+      case 'clothes':
+        return Icons.shopping_bag_rounded;
       case 'gifts':
-        return Icons.redeem_outlined;
+        return Icons.card_giftcard_rounded;
       case 'drinks':
-        return Icons.local_cafe_outlined;
+      case 'party':
+        return Icons.local_bar_rounded;
       case 'fuel':
-        return Icons.local_gas_station_outlined;
+      case 'petrol':
+      case 'diesel':
+        return Icons.local_gas_station_rounded;
       case 'udhaar':
-        return Icons.swap_horiz_outlined;
+      case 'loan':
+      case 'transfer':
+        return Icons.swap_horiz_rounded;
       case 'health':
-        return Icons.medical_services_outlined;
+      case 'medical':
+      case 'doctor':
+      case 'medicine':
+        return Icons.favorite_rounded;
       case 'entertainment':
-        return Icons.movie_creation_outlined;
+      case 'movies':
+      case 'games':
+        return Icons.movie_filter_rounded;
+      case 'education':
+      case 'books':
+      case 'course':
+        return Icons.school_rounded;
       case 'misc':
       default:
-        return Icons.category_outlined;
+        return Icons.auto_awesome_rounded;
     }
+  }
+
+  /// Builds a modern colorful badge container for a category icon.
+  static Widget buildBadge(String category, {double size = 44, double iconSize = 22}) {
+    final color = AppColors.categoryColor(category);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: Border.all(
+          color: color.withValues(alpha: 0.22),
+          width: 1.2,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          getIcon(category),
+          color: color,
+          size: iconSize,
+        ),
+      ),
+    );
   }
 }

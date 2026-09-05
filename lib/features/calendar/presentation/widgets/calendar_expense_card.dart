@@ -10,16 +10,25 @@ import '../../../../core/utils/row_helpers.dart';
 import '../../../expenses/presentation/utils/category_icon_helper.dart';
 import '../../../expenses/domain/expense_model.dart';
 import '../../../expenses/domain/expense_split_model.dart';
+import '../../../expenses/domain/expense_item_model.dart';
 import '../../../expenses/data/expense_repository.dart';
 import '../../../groups/domain/group_model.dart';
 import '../../../profile/domain/profile_model.dart';
 import '../../../auth/data/auth_repository.dart';
+
+import '../../../settlement/presentation/settlement_page.dart';
 
 // Providers for fetching additional details for the card
 
 final expenseSplitsProvider = FutureProvider.family<List<ExpenseSplit>, String>(
   (ref, expenseId) async {
     return ref.read(expenseRepositoryProvider).getExpenseSplits(expenseId);
+  },
+);
+
+final expenseItemsProvider = FutureProvider.family<List<ExpenseItem>, String>(
+  (ref, expenseId) async {
+    return ref.read(expenseRepositoryProvider).getExpenseItems(expenseId);
   },
 );
 
@@ -60,14 +69,19 @@ final profileByIdProvider = FutureProvider.family<Profile?, String>((
 
 class CalendarExpenseCard extends ConsumerWidget {
   final Expense expense;
+  final double? overrideShareAmount;
+  final double? personalItemAmount;
 
-  const CalendarExpenseCard({super.key, required this.expense});
+  const CalendarExpenseCard({
+    super.key, 
+    required this.expense,
+    this.overrideShareAmount,
+    this.personalItemAmount,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isGroup = expense.isGroup;
-    final isSettled = isGroup && expense.isSettled;
-
     // Asynchronously fetch details
     final currentUser = ref.watch(authStateProvider).valueOrNull;
     final profileAsync = ref.watch(profileByIdProvider(expense.userId));
@@ -80,6 +94,34 @@ class CalendarExpenseCard extends ConsumerWidget {
     AsyncValue<List<ExpenseSplit>> splitsAsync = const AsyncValue.data([]);
     if (isGroup) {
       splitsAsync = ref.watch(expenseSplitsProvider(expense.id));
+    }
+
+    final groupBalancesAsync = isGroup && expense.groupId != null
+        ? ref.watch(groupBalancesProvider(expense.groupId!))
+        : const AsyncValue.data(null);
+
+    final splits = splitsAsync.valueOrNull ?? [];
+
+    bool isSettled = expense.isSettled;
+    if (!isSettled && isGroup) {
+      final balancesData = groupBalancesAsync.valueOrNull;
+      if (balancesData != null) {
+        if (balancesData.unsettledExpenses.any((u) => u.id == expense.id)) {
+          isSettled = false;
+        } else if (balancesData.lastSettlement != null &&
+            (expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) ||
+                expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt))) {
+          isSettled = true;
+        }
+      }
+    }
+
+    bool isVirtuallyPersonal = false;
+    if (isGroup && splits.isNotEmpty && currentUser != null) {
+      final mySplit = splits.where((s) => s.userId == currentUser.id).firstOrNull;
+      if (mySplit != null && mySplit.amountOwed == expense.amount && expense.amount > 0) {
+        isVirtuallyPersonal = true;
+      }
     }
 
     return GestureDetector(
@@ -98,22 +140,7 @@ class CalendarExpenseCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Icon Container
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.borderLight),
-                ),
-                child: Center(
-                  child: Icon(
-                    CategoryIconHelper.getIcon(expense.category),
-                    color: AppColors.textPrimary,
-                    size: 20,
-                  ),
-                ),
-              ),
+              CategoryIconHelper.buildBadge(expense.category, size: 48, iconSize: 22),
               const SizedBox(width: 16),
 
               // Details
@@ -175,7 +202,7 @@ class CalendarExpenseCard extends ConsumerWidget {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               // Group Badge
-                              if (isGroup && groupAsync.valueOrNull != null)
+                              if (isGroup && groupAsync.valueOrNull != null) ...[
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,
@@ -204,8 +231,46 @@ class CalendarExpenseCard extends ConsumerWidget {
                                       ),
                                     ],
                                   ),
-                                )
-                              else if (!isGroup)
+                                ),
+                                if (isVirtuallyPersonal)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Personal',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                if (personalItemAmount != null && personalItemAmount! > 0 && !isVirtuallyPersonal)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Personal Items: ${DateHelpers.formatCurrency(personalItemAmount!)}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ] else if (!isGroup) ...[
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,
@@ -224,6 +289,7 @@ class CalendarExpenseCard extends ConsumerWidget {
                                     ),
                                   ),
                                 ),
+                              ],
 
                               // Settled Badge
                               if (isSettled)
@@ -261,7 +327,9 @@ class CalendarExpenseCard extends ConsumerWidget {
 
                               // Creator text
                               Text(
-                                'by ${currentUser?.id == expense.userId ? 'You' : (profileAsync.valueOrNull?.fullName.split(' ').first ?? '...')}',
+                                isVirtuallyPersonal
+                                  ? 'Paid by ${currentUser?.id == expense.userId ? 'You' : (profileAsync.valueOrNull?.fullName.split(' ').first ?? '...')}'
+                                  : 'by ${currentUser?.id == expense.userId ? 'You' : (profileAsync.valueOrNull?.fullName.split(' ').first ?? '...')}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
@@ -286,8 +354,10 @@ class CalendarExpenseCard extends ConsumerWidget {
                                 return const SizedBox.shrink();
                               }
 
+                              final shareAmount = overrideShareAmount ?? mySplit.amountOwed;
+
                               return Text(
-                                'Share: ${DateHelpers.formatCurrency(mySplit.amountOwed)}',
+                                'Share: ${DateHelpers.formatCurrency(shareAmount)}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,

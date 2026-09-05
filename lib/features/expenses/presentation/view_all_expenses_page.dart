@@ -117,23 +117,27 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                 ),
                 ...CategorizeService.allCategories.map((cat) {
                   final isSelected = _selectedCategory == cat;
+                  final catColor = AppColors.categoryColor(cat);
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
-                    avatar: Icon(
-                      CategoryIconHelper.getIcon(cat),
-                      color: isSelected ? AppColors.onPrimary : AppColors.textPrimary,
-                      size: 16,
-                    ),
-                    label: Text(CategorizeService.displayName(cat)),
+                      avatar: Icon(
+                        CategoryIconHelper.getIcon(cat),
+                        color: isSelected ? AppColors.primary : catColor,
+                        size: 16,
+                      ),
+                      label: Text(CategorizeService.displayName(cat)),
                       selected: isSelected,
                       onSelected: (selected) {
                         setState(() {
                           _selectedCategory = selected ? cat : null;
                         });
                       },
-                      selectedColor: AppColors.borderLight,
-                      checkmarkColor: AppColors.textPrimary,
+                      selectedColor: AppColors.primary.withValues(alpha: 0.12),
+                      checkmarkColor: AppColors.primary,
+                      side: BorderSide(
+                        color: isSelected ? AppColors.primary.withValues(alpha: 0.3) : AppColors.borderLight,
+                      ),
                     ),
                   );
                 }),
@@ -224,14 +228,7 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                           child: ListTile(
                             onTap: () =>
                                 context.push('/expense-detail', extra: e),
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.surfaceVariant,
-                              child: Icon(
-                                CategoryIconHelper.getIcon(e.category),
-                                color: AppColors.textPrimary,
-                                size: 20,
-                              ),
-                            ),
+                            leading: CategoryIconHelper.buildBadge(e.category, size: 44, iconSize: 22),
                             title: Text(
                               e.description,
                               style: const TextStyle(
@@ -273,11 +270,11 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                               children: [
                                 Text(
                                   DateHelpers.formatCurrency(e.amount),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: AppColors.textPrimary,
-                                  ),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      color: AppColors.mutedRed,
+                                    ),
                                 ),
                                 if (isGroup)
                                   Text(
@@ -504,8 +501,8 @@ class _ViewAllExpensesPageState extends ConsumerState<ViewAllExpensesPage> {
                         icon: const Icon(Icons.picture_as_pdf, size: 18),
                         label: const Text('PDF', style: TextStyle(fontWeight: FontWeight.bold)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.textPrimary,
-                          foregroundColor: AppColors.surface,
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
                           minimumSize: const Size(0, 48),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),

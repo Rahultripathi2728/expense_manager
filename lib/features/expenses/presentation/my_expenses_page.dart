@@ -2,35 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
 import 'package:go_router/go_router.dart';
-import 'utils/category_icon_helper.dart';
 import 'package:intl/intl.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../shared/widgets/animation_helpers.dart';
 import '../../../core/utils/date_helpers.dart';
-import '../../../shared/services/categorize_service.dart';
+import '../../../core/utils/haptic_helper.dart';
 import '../data/expense_repository.dart';
 import '../../profile/data/profile_repository.dart';
 import '../domain/expense_model.dart';
-import '../domain/expense_split_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../settlement/data/settlement_repository.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
+import '../../../core/services/cache_service.dart';
+import 'export/statement_export_screen.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
-final analyticsDateRangeProvider = StateProvider<DateTimeRange>((ref) {
+final analyticsMonthProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
-  return DateTimeRange(
-    start: DateTime(now.year, now.month, 1),
-    end: DateTime(now.year, now.month + 1, 0, 23, 59, 59),
-  );
+  return DateTime(now.year, now.month, 1);
 });
-final chartTabProvider = StateProvider<int>(
-  (ref) => 0,
-); // 0 = Daily Trend, 1 = Categories
+final expenseFilterDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+final cashFlowFilterTabProvider = StateProvider<String>((ref) => 'all'); // 'all', 'expense', 'received', 'paid'
 
 class MyExpensesPage extends ConsumerWidget {
   const MyExpensesPage({super.key});
@@ -62,27 +58,38 @@ class _MyExpensesTab extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     Profile profile,
+    DateTime month,
   ) {
+    final ym = DateFormat('yyyy-MM').format(month);
+    final currentBudget = ref.read(cacheServiceProvider).getMonthlyBudgetForMonth(
+          ym,
+          profile.monthlyBudget > 0 ? profile.monthlyBudget : 10000.0,
+        );
     final controller = TextEditingController(
-      text: profile.monthlyBudget.toStringAsFixed(0),
+      text: currentBudget.toStringAsFixed(0),
     );
     bool loading = false;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           backgroundColor: AppColors.surface,
-          title: const Text(
-            'Edit Monthly Budget',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          title: Text(
+            'Edit Budget (${DateHelpers.formatMonthYear(month)})',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
           ),
           content: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Budget Amount (₹)',
-              hintText: 'Enter new monthly budget',
+              hintText: 'Enter budget for ${DateHelpers.formatMonthYear(month)}',
             ),
           ),
           actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -93,10 +100,18 @@ class _MyExpensesTab extends ConsumerWidget {
                   child: TextButton(
                     style: TextButton.styleFrom(
                       minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -106,20 +121,32 @@ class _MyExpensesTab extends ConsumerWidget {
                       backgroundColor: AppColors.textPrimary,
                       foregroundColor: AppColors.surface,
                       minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onPressed: loading
                         ? null
                         : () async {
                             setState(() => loading = true);
                             try {
-                              final val = double.tryParse(controller.text) ?? 0.0;
-                              final updated = profile.copyWith(monthlyBudget: val);
-                              await ref.read(profileRepositoryProvider).updateProfile(updated);
+                              final val =
+                                  double.tryParse(controller.text) ?? 0.0;
+                              await ref
+                                  .read(cacheServiceProvider)
+                                  .saveMonthlyBudget(ym, val);
+                              final updated = profile.copyWith(
+                                monthlyBudget: val,
+                              );
+                              await ref
+                                  .read(profileRepositoryProvider)
+                                  .updateProfile(updated);
                               ref.invalidate(currentProfileProvider);
                               if (context.mounted) Navigator.pop(context);
                             } finally {
-                              if (context.mounted) setState(() => loading = false);
+                              if (context.mounted) {
+                                setState(() => loading = false);
+                              }
                             }
                           },
                     child: loading
@@ -131,7 +158,10 @@ class _MyExpensesTab extends ConsumerWidget {
                               color: AppColors.surface,
                             ),
                           )
-                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+                        : const Text(
+                            'Save',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                   ),
                 ),
               ],
@@ -142,68 +172,60 @@ class _MyExpensesTab extends ConsumerWidget {
     );
   }
 
-  void _showBreakdownDialog(BuildContext context, String title, List<Expense> expenses, List<ExpenseSplit> splits, String userId) {
-    showDialog(
+  void _pickCustomDateRange(BuildContext context, WidgetRef ref, DateTime currentMonth) async {
+    final currentRange = ref.read(expenseFilterDateRangeProvider);
+    final picked = await showDateRangePicker(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: expenses.isEmpty
-                ? Center(
-                    child: Text('No expenses found.', style: TextStyle(color: AppColors.textSecondary)),
-                  )
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: expenses.length,
-                    separatorBuilder: (_, __) => const Divider(),
-                    itemBuilder: (ctx, i) {
-                      final e = expenses[i];
-                      double share = e.amount;
-                      if (e.isGroup) {
-                        final match = splits.where((s) => s.expenseId == e.id && s.userId == userId).toList();
-                        share = match.isNotEmpty ? match.first.amountOwed : 0.0;
-                      }
-                      return ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          radius: 14,
-                          backgroundColor: AppColors.surfaceVariant,
-                          child: Icon(CategoryIconHelper.getIcon(e.category), size: 14, color: AppColors.textPrimary),
-                        ),
-                        title: Text(e.description, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text(DateHelpers.formatDayMonth(e.expenseDate), style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                        trailing: Text(DateHelpers.formatCurrency(share), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      );
-                    },
-                  ),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      initialDateRange: currentRange ??
+          DateTimeRange(
+            start: DateTime(currentMonth.year, currentMonth.month, 1),
+            end: DateTime(currentMonth.year, currentMonth.month + 1, 0),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Close', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        );
-      },
+    );
+    if (picked != null) {
+      ref.read(expenseFilterDateRangeProvider.notifier).state = picked;
+    }
+  }
+
+  void _showExportStatementModal({
+    required BuildContext context,
+    required WidgetRef ref,
+    required DateTime month,
+    required DateTimeRange? filterDateRange,
+    required List<Expense> expenses,
+    required CashFlowSummaryData? cashFlow,
+    required String? userName,
+  }) {
+    HapticHelper.mediumTap();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StatementExportScreen(
+          initialMonth: month,
+          initialDateRange: filterDateRange,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(themeProvider);
-    final dateRange = ref.watch(analyticsDateRangeProvider);
-    final expensesAsync = ref.watch(dateRangeExpensesProvider(dateRange));
+    final month = ref.watch(analyticsMonthProvider);
+    final expensesAsync = ref.watch(monthlyExpensesProvider(month));
     final splitsAsync = ref.watch(userSplitsProvider);
     final profileAsync = ref.watch(currentProfileProvider);
+    final itemsAsync = ref.watch(monthlyExpenseItemsProvider(month));
+    final cashFlowAsync = ref.watch(userCashFlowProvider(month));
     final currentUser = ref.watch(authStateProvider).valueOrNull;
-    final chartTab = ref.watch(chartTabProvider);
+    final filterDateRange = ref.watch(expenseFilterDateRangeProvider);
+    final activeCashFlowFilter = ref.watch(cashFlowFilterTabProvider);
+    final hasActiveFilter = filterDateRange != null;
+
     final userSplits = splitsAsync.valueOrNull ?? [];
+    final expenseItems = itemsAsync.valueOrNull ?? [];
     final myUserId = currentUser?.id;
 
     return SingleChildScrollView(
@@ -215,31 +237,32 @@ class _MyExpensesTab extends ConsumerWidget {
           // Date selection row
           Row(
             children: [
+              // Previous month
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.borderLight),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    Icons.chevron_left_rounded,
+                    color: AppColors.textPrimary,
+                    size: 22,
+                  ),
+                  onPressed: () {
+                    HapticHelper.lightTap();
+                    ref.read(expenseFilterDateRangeProvider.notifier).state = null;
+                    ref.read(analyticsMonthProvider.notifier).state =
+                        DateHelpers.previousMonth(month);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Current month / Date Range display
               Expanded(
                 child: GestureDetector(
-                  onTap: () async {
-                    final picked = await showDateRangePicker(
-                      context: context,
-                      initialDateRange: dateRange,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                      builder: (context, child) {
-                        return Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: ColorScheme.light(
-                              primary: AppColors.textPrimary,
-                              onPrimary: AppColors.surface,
-                              onSurface: AppColors.textPrimary,
-                            ),
-                          ),
-                          child: child!,
-                        );
-                      },
-                    );
-                    if (picked != null) {
-                      ref.read(analyticsDateRangeProvider.notifier).state = picked;
-                    }
-                  },
+                  onTap: () => _pickCustomDateRange(context, ref, month),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
@@ -253,23 +276,49 @@ class _MyExpensesTab extends ConsumerWidget {
                         Icon(
                           Icons.calendar_today_outlined,
                           size: 16,
-                          color: AppColors.textPrimary,
+                          color: AppColors.primary,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '${DateHelpers.formatDayMonth(dateRange.start)} - ${DateHelpers.formatDayMonth(dateRange.end)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                        Flexible(
+                          child: Text(
+                            filterDateRange != null
+                                ? '${DateHelpers.formatDayMonth(filterDateRange.start)} - ${DateHelpers.formatDayMonth(filterDateRange.end)}'
+                                : DateHelpers.formatMonthYear(month),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (DateHelpers.isCurrentMonth(month) && filterDateRange == null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.borderLight,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'Now',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              // Filter
+              // Next month
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.surface,
@@ -277,8 +326,43 @@ class _MyExpensesTab extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: IconButton(
-                  icon: Icon(Icons.tune, color: AppColors.textPrimary, size: 20),
-                  onPressed: () {},
+                  icon: Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textPrimary,
+                    size: 22,
+                  ),
+                  onPressed: () {
+                    HapticHelper.lightTap();
+                    ref.read(expenseFilterDateRangeProvider.notifier).state = null;
+                    ref.read(analyticsMonthProvider.notifier).state =
+                        DateHelpers.nextMonth(month);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Custom Date Filter Button
+              Container(
+                decoration: BoxDecoration(
+                  color: hasActiveFilter ? AppColors.primary : AppColors.surface,
+                  border: Border.all(
+                    color: hasActiveFilter ? AppColors.primary : AppColors.borderLight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    hasActiveFilter ? Icons.close_rounded : Icons.tune_rounded,
+                    color: hasActiveFilter ? Colors.white : AppColors.textPrimary,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    HapticHelper.lightTap();
+                    if (hasActiveFilter) {
+                      ref.read(expenseFilterDateRangeProvider.notifier).state = null;
+                    } else {
+                      _pickCustomDateRange(context, ref, month);
+                    }
+                  },
                 ),
               ),
             ],
@@ -294,40 +378,43 @@ class _MyExpensesTab extends ConsumerWidget {
             ),
             error: (err, _) => CustomErrorWidget(
               error: err,
-              onRetry: () => ref.invalidate(dateRangeExpensesProvider(dateRange)),
+              onRetry: () => ref.invalidate(monthlyExpensesProvider(month)),
             ),
-            data: (expenses) {
-              final analyticsExpenses = expenses.where((e) => !e.isSettled).toList();
+            data: (rawExpenses) {
+              var expenses = rawExpenses;
+              if (filterDateRange != null) {
+                expenses = rawExpenses.where((e) {
+                  return e.expenseDate.isAfter(filterDateRange.start.subtract(const Duration(seconds: 1))) &&
+                      e.expenseDate.isBefore(filterDateRange.end.add(const Duration(days: 1)));
+                }).toList();
+              }
 
-              final personalBreakdown = analyticsExpenses.where((e) {
-                if (e.isPersonal) return true;
-                if (e.isGroup && e.splitType == 'itemwise') {
-                  final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
-                  return match.isNotEmpty;
+              double personalTotal = expenses
+                  .where((e) => e.isPersonal)
+                  .fold<double>(0.0, (sum, e) => sum + e.amount);
+              double groupShareTotal = 0.0;
+              for (final e in expenses.where((e) => e.isGroup)) {
+                final match = userSplits
+                    .where((s) => s.expenseId == e.id && s.userId == myUserId)
+                    .toList();
+                double amountOwed = match.isNotEmpty ? match.first.amountOwed : 0.0;
+
+                if (e.splitType == 'itemwise') {
+                  final items = expenseItems.where((i) => i.expenseId == e.id).toList();
+                  double purelyPersonal = 0.0;
+                  for (final item in items) {
+                    if (item.participants.length == 1 && item.participants.first == myUserId) {
+                      purelyPersonal += item.itemAmount;
+                    }
+                  }
+                  personalTotal += purelyPersonal;
+                  groupShareTotal += (amountOwed - purelyPersonal);
+                } else if (amountOwed == e.amount && e.amount > 0) {
+                  personalTotal += amountOwed;
+                } else {
+                  groupShareTotal += amountOwed;
                 }
-                return false;
-              }).toList();
-
-              final groupBreakdown = analyticsExpenses.where((e) {
-                if (e.isGroup && e.splitType != 'itemwise') {
-                  final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
-                  return match.isNotEmpty;
-                }
-                return false;
-              }).toList();
-
-              final totalBreakdown = [...personalBreakdown, ...groupBreakdown];
-
-              double personalTotal = personalBreakdown.fold<double>(0.0, (sum, e) {
-                if (e.isPersonal) return sum + e.amount;
-                final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
-                return sum + match.first.amountOwed;
-              });
-
-              double groupShareTotal = groupBreakdown.fold<double>(0.0, (sum, e) {
-                final match = userSplits.where((s) => s.expenseId == e.id && s.userId == myUserId).toList();
-                return sum + match.first.amountOwed;
-              });
+              }
 
               final totalSpent = personalTotal + groupShareTotal;
 
@@ -341,100 +428,174 @@ class _MyExpensesTab extends ConsumerWidget {
                       loading: () => const SizedBox(),
                       error: (_, __) => const SizedBox(),
                       data: (profile) {
-                        final budget = profile?.monthlyBudget ?? 10000.0;
+                        final ym = DateFormat('yyyy-MM').format(month);
+                        final budget = ref.watch(cacheServiceProvider).getMonthlyBudgetForMonth(
+                              ym,
+                              profile?.monthlyBudget ?? 10000.0,
+                            );
                         final percentage = budget > 0
                             ? (totalSpent / budget) * 100
                             : 0.0;
                         final remaining = budget - totalSpent;
 
+                        final isOverBudget = remaining < 0;
+                        final progressColor = percentage >= 90
+                            ? const Color(0xFFEF4444)
+                            : percentage >= 60
+                                ? const Color(0xFFF59E0B)
+                                : const Color(0xFF10B981);
+
                         return Container(
-                          padding: const EdgeInsets.all(18),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           decoration: BoxDecoration(
-                            color: AppColors.textPrimary,
-                            borderRadius: BorderRadius.circular(18),
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.borderLight),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.02),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Header: Title & Edit Action
                               Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                  Row(
                                     children: [
-                                      Text(
-                                        'MONTHLY BUDGET',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: AppColors.textSecondary,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.5,
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          Icons.account_balance_wallet_rounded,
+                                          size: 16,
+                                          color: AppColors.primary,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(width: 8),
                                       Text(
-                                        DateHelpers.formatCurrency(budget),
+                                        'Monthly Budget',
                                         style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.surface,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        'SPENT',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: AppColors.textSecondary,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.5,
+                                  if (profile != null)
+                                    GestureDetector(
+                                      onTap: () => _showEditBudgetDialog(
+                                        context,
+                                        ref,
+                                        profile,
+                                        month,
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surfaceVariant,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: AppColors.borderLight),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.edit_outlined,
+                                              size: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Edit',
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Amounts Row
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                                    textBaseline: TextBaseline.alphabetic,
+                                    children: [
                                       Text(
                                         DateHelpers.formatCurrency(totalSpent),
                                         style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.surface,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w900,
+                                          color: isOverBudget ? const Color(0xFFEF4444) : AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'spent',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ],
                                   ),
+                                  Text(
+                                    'Limit: ${DateHelpers.formatCurrency(budget)}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 10),
+
+                              // Sleek Progress Bar
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(4),
                                 child: LinearProgressIndicator(
                                   value: budget > 0
                                       ? (totalSpent / budget).clamp(0.0, 1.0)
                                       : 0.0,
-                                  minHeight: 7,
+                                  minHeight: 6,
                                   backgroundColor: AppColors.borderLight,
-                                  color: percentage >= 90
-                                      ? Colors.red
-                                      : percentage >= 60
-                                      ? Colors.amber
-                                      : const Color(0xFF22C55E),
+                                  color: progressColor,
                                 ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 8),
+
+                              // Footer: Usage & Remaining
                               Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     '${percentage.toStringAsFixed(0)}% used',
                                     style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textTertiary,
                                     ),
                                   ),
                                   Text(
@@ -442,39 +603,13 @@ class _MyExpensesTab extends ConsumerWidget {
                                         ? '${DateHelpers.formatCurrency(remaining)} remaining'
                                         : '${DateHelpers.formatCurrency(-remaining)} over budget',
                                     style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isOverBudget ? const Color(0xFFEF4444) : const Color(0xFF10B981),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 12),
-                              if (profile != null)
-                                GestureDetector(
-                                  onTap: () => _showEditBudgetDialog(
-                                    context,
-                                    ref,
-                                    profile,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Edit Budget',
-                                        style: TextStyle(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Icon(
-                                        Icons.chevron_right,
-                                        color: AppColors.textSecondary,
-                                        size: 16,
-                                      ),
-                                    ],
-                                  ),
-                                ),
                             ],
                           ),
                         );
@@ -483,415 +618,382 @@ class _MyExpensesTab extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Personal and Group breakdown cards with fade-slide
+                  // Personal and Group breakdown cards side-by-side with fade-slide
                   FadeSlideIn(
                     delay: const Duration(milliseconds: 200),
-                    child: Column(
+                    child: Row(
                       children: [
-                        // Personal Card
-                        GestureDetector(
-                          onTap: () => _showBreakdownDialog(context, 'Personal Spend', personalBreakdown, userSplits, myUserId ?? ''),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.borderLight),
-                            ),
-                          child: Row(
-                            children: [
-                              Column(
+                        // Personal Card (Left)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => context.push('/personal-expenses', extra: month),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppColors.borderLight),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.02),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.person_rounded,
+                                          color: Color(0xFF10B981),
+                                          size: 18,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 13,
+                                        color: AppColors.textTertiary,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
                                   Text(
                                     'Personal',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   Text(
                                     DateHelpers.formatCurrency(personalTotal),
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF10B981),
                                     ),
                                   ),
                                 ],
                               ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceVariant,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.account_balance_wallet_outlined,
-                                  color: AppColors.textPrimary,
-                                  size: 20,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        // Group Share Card
-                        GestureDetector(
-                          onTap: () => _showBreakdownDialog(context, 'My Share (Group)', groupBreakdown, userSplits, myUserId ?? ''),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.borderLight),
-                            ),
-                          child: Row(
-                            children: [
-                              Column(
+                        const SizedBox(width: 12),
+
+                        // Group Share Card (Right)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => context.push('/group-share-selection', extra: month),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppColors.borderLight),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.02),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withValues(alpha: 0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          Icons.groups_rounded,
+                                          color: AppColors.primary,
+                                          size: 18,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 13,
+                                        color: AppColors.textTertiary,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
                                   Text(
                                     'My Share (Group)',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   Text(
                                     DateHelpers.formatCurrency(groupShareTotal),
                                     style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
                                     ),
                                   ),
                                 ],
                               ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceVariant,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.people_outline,
-                                  color: AppColors.textPrimary,
-                                  size: 20,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        // Total Card
-                        GestureDetector(
-                          onTap: () => _showBreakdownDialog(context, 'Total Spent', totalBreakdown, userSplits, myUserId ?? ''),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.borderLight),
-                            ),
-                          child: Row(
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Consolidated Cash Flow & Settlement Overview (Directly on this Page)
+                  cashFlowAsync.when(
+                    loading: () => const SkeletonList(itemCount: 2),
+                    error: (err, _) => Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text('Cash Flow Data: $err', style: TextStyle(color: AppColors.error, fontSize: 12)),
+                    ),
+                    data: (cashFlow) {
+                      final allActivities = cashFlow.activities;
+                      final expensesActivities = allActivities.where((a) => a.type == CashFlowType.expense).toList();
+                      final receivedActivities = allActivities.where((a) => a.type == CashFlowType.settlementReceived).toList();
+                      final paidActivities = allActivities.where((a) => a.type == CashFlowType.settlementPaid).toList();
+
+                      final filteredActivities = allActivities.where((a) {
+                        if (activeCashFlowFilter == 'expense') return a.type == CashFlowType.expense;
+                        if (activeCashFlowFilter == 'received') return a.type == CashFlowType.settlementReceived;
+                        if (activeCashFlowFilter == 'paid') return a.type == CashFlowType.settlementPaid;
+                        return true;
+                      }).toList();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Section Header
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              Row(
                                 children: [
-                                  Text(
-                                    'Total',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w500,
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.account_balance_wallet_rounded,
+                                      size: 16,
+                                      color: AppColors.primary,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    DateHelpers.formatCurrency(totalSpent),
+                                    'Cash Flow & Settlements',
                                     style: TextStyle(
-                                      fontSize: 18,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.bold,
                                       color: AppColors.textPrimary,
                                     ),
                                   ),
                                 ],
                               ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE2FBE7),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.trending_up,
-                                  color: Color(0xFF22C55E),
-                                  size: 20,
+                              InkWell(
+                                onTap: () {
+                                  HapticHelper.mediumTap();
+                                  final currentExps = expensesAsync.valueOrNull ?? [];
+                                  _showExportStatementModal(
+                                    context: context,
+                                    ref: ref,
+                                    month: month,
+                                    filterDateRange: filterDateRange,
+                                    expenses: currentExps,
+                                    cashFlow: cashFlowAsync.valueOrNull,
+                                    userName: currentUser?.name ?? profileAsync.valueOrNull?.fullName,
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: AppColors.primary.withValues(alpha: 0.25),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.picture_as_pdf_rounded,
+                                        size: 14,
+                                        color: AppColors.primary,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        'Export PDF',
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
+                          const SizedBox(height: 8),
 
-                  // Chart Tab switch pills
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F3F3),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () =>
-                                ref.read(chartTabProvider.notifier).state = 0,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              decoration: BoxDecoration(
-                                color: chartTab == 0
-                                    ? AppColors.surface
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
+                          // 4 Interactive Metric Cards Grid
+                          Row(
+                            children: [
+                              // Total Spent
+                              Expanded(
+                                child: _buildMetricCard(
+                                  title: 'TOTAL SPENT',
+                                  amount: cashFlow.totalSpent,
+                                  color: AppColors.primary,
+                                  icon: Icons.receipt_long_rounded,
+                                  isSelected: activeCashFlowFilter == 'expense',
+                                  onTap: () {
+                                    HapticHelper.selectionClick();
+                                    ref.read(cashFlowFilterTabProvider.notifier).state =
+                                        activeCashFlowFilter == 'expense' ? 'all' : 'expense';
+                                  },
+                                ),
                               ),
+                              const SizedBox(width: 10),
+
+                              // Received (+)
+                              Expanded(
+                                child: _buildMetricCard(
+                                  title: 'RECEIVED (+)',
+                                  amount: cashFlow.totalReceived,
+                                  color: const Color(0xFF10B981),
+                                  icon: Icons.arrow_downward_rounded,
+                                  isSelected: activeCashFlowFilter == 'received',
+                                  onTap: () {
+                                    HapticHelper.selectionClick();
+                                    ref.read(cashFlowFilterTabProvider.notifier).state =
+                                        activeCashFlowFilter == 'received' ? 'all' : 'received';
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              // Paid Out (-)
+                              Expanded(
+                                child: _buildMetricCard(
+                                  title: 'PAID OUT (-)',
+                                  amount: cashFlow.totalPaidOut,
+                                  color: const Color(0xFFEF4444),
+                                  icon: Icons.arrow_upward_rounded,
+                                  isSelected: activeCashFlowFilter == 'paid',
+                                  onTap: () {
+                                    HapticHelper.selectionClick();
+                                    ref.read(cashFlowFilterTabProvider.notifier).state =
+                                        activeCashFlowFilter == 'paid' ? 'all' : 'paid';
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+
+                              // Net Cash Flow
+                              Expanded(
+                                child: _buildMetricCard(
+                                  title: 'NET CASH FLOW',
+                                  amount: cashFlow.netCashFlow,
+                                  color: cashFlow.netCashFlow >= 0
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFEF4444),
+                                  icon: Icons.swap_vert_rounded,
+                                  isSelected: activeCashFlowFilter == 'all',
+                                  isNet: true,
+                                  onTap: () {
+                                    HapticHelper.selectionClick();
+                                    ref.read(cashFlowFilterTabProvider.notifier).state = 'all';
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Activity Filter Chips
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            child: Row(
+                              children: [
+                                _buildFilterChip(ref, 'all', 'All Activity (${allActivities.length})', activeCashFlowFilter),
+                                const SizedBox(width: 8),
+                                _buildFilterChip(ref, 'expense', '🧾 Expenses (${expensesActivities.length})', activeCashFlowFilter),
+                                const SizedBox(width: 8),
+                                _buildFilterChip(ref, 'received', '🟢 Received (${receivedActivities.length})', activeCashFlowFilter),
+                                const SizedBox(width: 8),
+                                _buildFilterChip(ref, 'paid', '🔴 Paid Out (${paidActivities.length})', activeCashFlowFilter),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Activity List (Consolidated Feed)
+                          if (filteredActivities.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(vertical: 24),
                               alignment: Alignment.center,
-                              child: Text(
-                                'Daily Trend',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: chartTab == 0
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () =>
-                                ref.read(chartTabProvider.notifier).state = 1,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
                               decoration: BoxDecoration(
-                                color: chartTab == 1
-                                    ? AppColors.surface
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppColors.borderLight),
                               ),
-                              alignment: Alignment.center,
                               child: Text(
-                                'Categories',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: chartTab == 1
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
-                                ),
+                                'No activity in this filter for ${DateHelpers.formatMonthYear(month)}.',
+                                style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
                               ),
+                            )
+                          else
+                            ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: filteredActivities.length > 8 ? 8 : filteredActivities.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (context, idx) {
+                                final item = filteredActivities[idx];
+                                return _buildActivityRow(context, item);
+                              },
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: AppSpacing.md),
-
-                  // Render Selected Chart
-                  if (chartTab == 0)
-                    DailyTrendChart(
-                      expenses: analyticsExpenses,
-                      userSplits: userSplits,
-                      currentUserId: myUserId ?? '',
-                      dateRange: dateRange,
-                    )
-                  else
-                    CategoryDistributionList(
-                      expenses: analyticsExpenses,
-                      userSplits: userSplits,
-                      currentUserId: myUserId ?? '',
-                    ),
-
-                  const SizedBox(height: AppSpacing.xl),
-
-                  // Recent Expenses Header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Recent Expenses',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => context.push('/expenses/view-all'),
-                        icon: const SizedBox(),
-                        label: Row(
-                          children: [
-                            Text(
-                              'View All',
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward,
-                              size: 16,
-                              color: AppColors.textSecondary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-
-                  // Recent Expenses List
-                  if (expenses.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'No expenses recorded.',
-                        style: TextStyle(color: AppColors.textTertiary),
-                      ),
-                    )
-                  else
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: expenses.length > 5 ? 5 : expenses.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, idx) {
-                        final e = expenses[idx];
-                        final isGrp = e.expenseType == 'group';
-
-                        double shareAmt = e.amount;
-                        if (isGrp) {
-                          final match = userSplits
-                              .where(
-                                (s) =>
-                                    s.expenseId == e.id && s.userId == myUserId,
-                              )
-                              .toList();
-                          shareAmt = match.isNotEmpty
-                              ? match.first.amountOwed
-                              : e.amount;
-                        }
-                        return StaggeredListItem(
-                          index: idx,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: AppColors.borderLight,
-                                width: 1,
-                              ),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: ListTile(
-                                onTap: () =>
-                                    context.push('/expense-detail', extra: e),
-                                leading: CircleAvatar(
-                                  backgroundColor: AppColors.surfaceVariant,
-                                  child: Icon(
-                                    CategoryIconHelper.getIcon(
-                                      e.category,
-                                    ),
-                                    color: AppColors.textPrimary,
-                                    size: 20,
-                                  ),
-                                ),
-                                title: Text(
-                                  e.description,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                subtitle: Row(
-                                  children: [
-                                    Text(
-                                      DateHelpers.formatDayMonth(e.expenseDate),
-                                      style: TextStyle(
-                                        color: AppColors.textTertiary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    if (isGrp && e.isSettled)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFE2FBE7),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Settled',
-                                          style: TextStyle(
-                                            color: Color(0xFF22C55E),
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      DateHelpers.formatCurrency(e.amount),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    if (isGrp)
-                                      Text(
-                                        'Share: ${DateHelpers.formatCurrency(shareAmt)}',
-                                        style: TextStyle(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
                   const SizedBox(height: 100), // padding at bottom
                 ],
               );
@@ -901,396 +1003,230 @@ class _MyExpensesTab extends ConsumerWidget {
       ),
     );
   }
-}
 
-class DailyTrendChart extends StatelessWidget {
-  final List<Expense> expenses;
-  final List<ExpenseSplit> userSplits;
-  final String currentUserId;
-  final DateTimeRange dateRange;
-
-  const DailyTrendChart({
-    super.key,
-    required this.expenses,
-    required this.userSplits,
-    required this.currentUserId,
-    required this.dateRange,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final start = dateRange.start;
-    final days = dateRange.end.difference(start).inDays + 1;
-    final List<FlSpot> personalSpots = [];
-    final List<FlSpot> groupSpots = [];
-
-    for (int d = 0; d < days; d++) {
-      final dayDate = start.add(Duration(days: d));
-      final dayExps = expenses
-          .where((e) => DateHelpers.isSameDay(e.expenseDate, dayDate))
-          .toList();
-
-      double personalDay = 0.0;
-      double groupDay = 0.0;
-
-      for (final e in dayExps) {
-        if (e.isPersonal) {
-          personalDay += e.amount;
-        } else {
-          final match = userSplits
-              .where((s) => s.expenseId == e.id && s.userId == currentUserId)
-              .toList();
-          if (match.isNotEmpty) {
-            if (e.splitType == 'itemwise') {
-              personalDay += match.first.amountOwed;
-            } else {
-              groupDay += match.first.amountOwed;
-            }
-          }
-        }
-      }
-      personalSpots.add(FlSpot(d.toDouble() + 1, personalDay));
-      groupSpots.add(FlSpot(d.toDouble() + 1, groupDay));
-    }
-
-    double maxVal = 1000;
-    for (final spot in personalSpots) {
-      if (spot.y > maxVal) maxVal = spot.y;
-    }
-    for (final spot in groupSpots) {
-      if (spot.y > maxVal) maxVal = spot.y;
-    }
-    maxVal = (maxVal / 1000).ceil() * 1000.0; // round to next 1k
-
-    return Column(
-      children: [
-        Container(
-          height: 220,
-          padding: const EdgeInsets.only(right: 16, top: 16, bottom: 8),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.borderLight),
+  Widget _buildMetricCard({
+    required String title,
+    required double amount,
+    required Color color,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    bool isNet = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? color : AppColors.borderLight,
+            width: isSelected ? 2.0 : 1.0,
           ),
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16, bottom: 16),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F3F3),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(
-                          Icons.bar_chart,
-                          size: 16,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Daily Spending',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Expanded(
-                child: LineChart(
-                  LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: true,
-                      horizontalInterval: maxVal > 0 ? maxVal / 4 : 1000,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: AppColors.surfaceVariant,
-                        strokeWidth: 1,
-                        dashArray: [5, 5],
-                      ),
-                      getDrawingVerticalLine: (value) => FlLine(
-                        color: AppColors.surfaceVariant,
-                        strokeWidth: 1,
-                        dashArray: [5, 5],
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 32,
-                          interval: maxVal / 4 > 0 ? maxVal / 4 : 1000,
-                          getTitlesWidget: (val, _) {
-                            if (val == 0) return const SizedBox();
-                            if (val >= 1000) {
-                              return Text(
-                                '${(val / 1000).toStringAsFixed(0)}k',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.textSecondary,
-                                ),
-                              );
-                            }
-                            return Text(
-                              val.toStringAsFixed(0),
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: AppColors.textSecondary,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (val, _) {
-                            final intDay = val.toInt();
-                            if (intDay == 1 ||
-                                intDay == 5 ||
-                                intDay == 10 ||
-                                intDay == 15 ||
-                                intDay == 20 ||
-                                intDay == 25 ||
-                                intDay == days) {
-                              return Text(
-                                intDay.toString().padLeft(2, '0'),
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.textSecondary,
-                                ),
-                              );
-                            }
-                            return const SizedBox();
-                          },
-                        ),
-                      ),
-                    ),
-                    borderData: FlBorderData(
-                      show: true,
-                      border: Border(
-                        bottom: BorderSide(
-                          color: AppColors.textTertiary,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                    minX: 1,
-                    maxX: days.toDouble(),
-                    minY: 0,
-                    maxY: maxVal,
-                    lineTouchData: LineTouchData(
-                      touchTooltipData: LineTouchTooltipData(
-                        getTooltipColor: (touchedSpot) => AppColors.surface,
-                        tooltipRoundedRadius: 8,
-                        tooltipBorder: BorderSide(color: AppColors.borderLight),
-                        getTooltipItems: (touchedSpots) {
-                          return touchedSpots.map((spot) {
-                            final dateObj = start.add(Duration(days: spot.x.toInt() - 1));
-                            final dateStr = '${dateObj.day.toString().padLeft(2, '0')} ${DateFormat('MMM').format(dateObj)}';
-                            return LineTooltipItem(
-                              '$dateStr\nTotal: ${DateHelpers.formatCurrency(spot.y)}',
-                              TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            );
-                          }).toList();
-                        },
-                      ),
-                    ),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: personalSpots,
-                        isCurved: true,
-                        color: AppColors.textPrimary,
-                        barWidth: 2.2,
-                        dotData: const FlDotData(show: false),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: AppColors.textPrimary.withValues(alpha: 0.04),
-                        ),
-                      ),
-                      LineChartBarData(
-                        spots: groupSpots,
-                        isCurved: true,
-                        color: AppColors.textTertiary,
-                        barWidth: 2.2,
-                        dotData: const FlDotData(show: false),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: Colors.grey.withValues(alpha: 0.04),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Legend
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: AppColors.textPrimary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Personal',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(width: 16),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: AppColors.textTertiary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Group',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected ? color.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.02),
+              blurRadius: isSelected ? 8 : 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? color : AppColors.textSecondary,
+                      letterSpacing: 0.5,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(icon, color: color, size: 14),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isNet
+                  ? '${amount >= 0 ? '+' : ''}${DateHelpers.formatCurrency(amount)}'
+                  : DateHelpers.formatCurrency(amount),
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
-}
 
-class CategoryDistributionList extends StatelessWidget {
-  final List<Expense> expenses;
-  final List<ExpenseSplit> userSplits;
-  final String currentUserId;
-
-  const CategoryDistributionList({
-    super.key,
-    required this.expenses,
-    required this.userSplits,
-    required this.currentUserId,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final Map<String, double> categorySums = {};
-    for (final exp in expenses) {
-      double amt = 0.0;
-      if (exp.isPersonal) {
-        amt = exp.amount;
-      } else {
-        final matching = userSplits
-            .where((s) => s.expenseId == exp.id && s.userId == currentUserId)
-            .toList();
-        amt = matching.isNotEmpty ? matching.first.amountOwed : 0.0;
-      }
-      categorySums[exp.category] = (categorySums[exp.category] ?? 0.0) + amt;
-    }
-
-    final sorted = categorySums.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final double total = categorySums.values.fold<double>(0.0, (a, b) => a + b);
-
-    if (sorted.isEmpty) {
-      return Container(
-        height: 100,
-        alignment: Alignment.center,
-        child: Text(
-          'No category details available',
-          style: TextStyle(color: AppColors.textSecondary),
+  Widget _buildFilterChip(WidgetRef ref, String key, String label, String activeKey) {
+    final isSelected = key == activeKey;
+    return GestureDetector(
+      onTap: () {
+        HapticHelper.selectionClick();
+        ref.read(cashFlowFilterTabProvider.notifier).state = key;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.borderLight,
+          ),
         ),
-      );
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? Colors.white : AppColors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityRow(BuildContext context, CashFlowActivityItem item) {
+    final isExpense = item.type == CashFlowType.expense;
+    final isReceived = item.type == CashFlowType.settlementReceived;
+
+    Color badgeColor;
+    IconData badgeIcon;
+    String sign;
+    Color amountColor;
+
+    if (isExpense) {
+      badgeColor = AppColors.primary;
+      badgeIcon = Icons.receipt_long_rounded;
+      sign = '-';
+      amountColor = AppColors.textPrimary;
+    } else if (isReceived) {
+      badgeColor = const Color(0xFF10B981);
+      badgeIcon = Icons.arrow_downward_rounded;
+      sign = '+';
+      amountColor = const Color(0xFF10B981);
+    } else {
+      badgeColor = const Color(0xFFEF4444);
+      badgeIcon = Icons.arrow_upward_rounded;
+      sign = '-';
+      amountColor = const Color(0xFFEF4444);
     }
 
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: sorted.length,
-      itemBuilder: (context, index) {
-        final entry = sorted[index];
-        final pct = total > 0 ? (entry.value / total) * 100 : 0.0;
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: AppColors.surfaceVariant,
-                child: Icon(
-                  CategoryIconHelper.getIcon(entry.key),
-                  color: AppColors.textPrimary,
-                  size: 16,
-                ),
+    return InkWell(
+      onTap: () {
+        HapticHelper.lightTap();
+        if (item.originalObject is Expense) {
+          context.push('/expense-detail', extra: item.originalObject as Expense);
+        }
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: badgeColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: badgeColor.withValues(alpha: 0.25)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      CategorizeService.displayName(entry.key),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    LinearProgressIndicator(
-                      value: total > 0 ? entry.value / total : 0.0,
-                      backgroundColor: AppColors.surfaceVariant,
-                      color: AppColors.textPrimary,
-                      minHeight: 4,
-                    ),
-                  ],
-                ),
+              child: Center(
+                child: Icon(badgeIcon, color: badgeColor, size: 18),
               ),
-              const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    DateHelpers.formatCurrency(entry.value),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
+                    item.title,
+                    style: TextStyle(
                       fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    '${pct.toStringAsFixed(0)}%',
-                    style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(
+                        isExpense
+                            ? 'Paid by ${item.payerName ?? 'You'}'
+                            : (item.subtitle ?? ''),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '• ${DateHelpers.formatDayMonth(item.date)}',
+                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          item.groupName ?? 'General',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        );
-      },
+            ),
+            Text(
+              '$sign${DateHelpers.formatCurrency(item.amount)}',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: amountColor,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

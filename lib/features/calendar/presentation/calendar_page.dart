@@ -12,6 +12,9 @@ import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/animation_helpers.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 import 'widgets/calendar_expense_card.dart';
+import '../../expenses/domain/expense_model.dart';
+import '../../groups/data/group_repository.dart';
+import '../../settlement/presentation/settlement_page.dart';
 
 /// Provider for current month in calendar view.
 final calendarMonthProvider = StateProvider<DateTime>((ref) {
@@ -46,6 +49,8 @@ final dailySummaryProvider = FutureProvider.family<DailySummary, DateTime>((
   double total = 0;
   double userShare = 0;
 
+  // Separate personal and group expenses
+  final groupExpenses = <Expense>[];
   for (final e in dayExpenses) {
     total += e.amount;
     if (e.isPersonal) {
@@ -53,16 +58,21 @@ final dailySummaryProvider = FutureProvider.family<DailySummary, DateTime>((
         userShare += e.amount;
       }
     } else {
-      final splits = await ref
-          .read(expenseRepositoryProvider)
-          .getExpenseSplits(e.id);
-      if (currentUser != null) {
-        final mySplit = splits
-            .where((s) => s.userId == currentUser.id)
-            .firstOrNull;
-        if (mySplit != null) {
-          userShare += mySplit.amountOwed;
-        }
+      groupExpenses.add(e);
+    }
+  }
+  // Batch fetch all splits in parallel instead of N+1 sequential calls
+  if (groupExpenses.isNotEmpty && currentUser != null) {
+    final repo = ref.read(expenseRepositoryProvider);
+    final allSplitsFutures = groupExpenses.map((e) => repo.getExpenseSplits(e.id));
+    final allSplitsResults = await Future.wait(allSplitsFutures);
+
+    for (final splits in allSplitsResults) {
+      final mySplit = splits
+          .where((s) => s.userId == currentUser.id)
+          .firstOrNull;
+      if (mySplit != null) {
+        userShare += mySplit.amountOwed;
       }
     }
   }
@@ -112,10 +122,19 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     );
   }
 
-  Color _getExpenseColor(dynamic expense) {
-    if (expense.isSettled) {
+  Color _getExpenseColor(Expense expense, Map<String, GroupBalanceData> groupBalancesMap) {
+    bool isSettled = expense.isSettled;
+    if (!isSettled && expense.isGroup && expense.groupId != null) {
+      final b = groupBalancesMap[expense.groupId];
+      if (b != null) {
+        final isStillUnsettled = b.unsettledExpenses.any((e) => e.id == expense.id);
+        isSettled = !isStillUnsettled;
+      }
+    }
+
+    if (isSettled) {
       return const Color(0xFF22C55E); // Green (Settled)
-    } else if (expense.expenseType == 'group') {
+    } else if (expense.isGroup) {
       return const Color(0xFFF97316); // Orange (Group)
     } else {
       return const Color(0xFF3B82F6); // Blue (Personal)
@@ -181,6 +200,15 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     final expensesAsync = ref.watch(monthlyExpensesProvider(currentMonth));
     final userState = ref.watch(authStateProvider);
     final displayName = userState.valueOrNull?.name ?? 'User';
+
+    final userGroups = ref.watch(userGroupsProvider).valueOrNull ?? [];
+    final Map<String, GroupBalanceData> groupBalancesMap = {};
+    for (final g in userGroups) {
+      final b = ref.watch(groupBalancesProvider(g.id)).valueOrNull;
+      if (b != null) {
+        groupBalancesMap[g.id] = b;
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -254,13 +282,44 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                 ref.read(calendarMonthProvider.notifier).state =
                                     DateHelpers.previousMonth(currentMonth),
                           ),
-                          Text(
-                            DateHelpers.formatMonthYear(currentMonth),
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                DateHelpers.formatMonthYear(currentMonth),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              if (currentMonth.year != today.year || currentMonth.month != today.month) ...[
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () {
+                                    HapticHelper.lightTap();
+                                    ref.read(calendarMonthProvider.notifier).state = DateTime(today.year, today.month, 1);
+                                    setState(() => _selectedDate = DateTime.now());
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      'Today',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           IconButton(
                             icon: Icon(
@@ -382,7 +441,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   );
                                   final Set<Color> dotColors = {};
                                   for (var e in dayExpenses) {
-                                    dotColors.add(_getExpenseColor(e));
+                                    dotColors.add(_getExpenseColor(e, groupBalancesMap));
                                   }
 
                                   return GestureDetector(
@@ -413,7 +472,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: isSelected
-                                            ? const Color(0xFFEBEBEB)
+                                            ? AppColors.surfaceHover
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(12),
                                         border: isToday
@@ -434,14 +493,13 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                               fontWeight: FontWeight.bold,
                                               color: isCurrentMonthDay
                                                   ? AppColors.textPrimary
-                                                  : Colors.grey.shade300,
+                                                  : AppColors.textDisabled,
                                             ),
                                           ),
                                           const SizedBox(height: 4),
                                           SizedBox(
                                             height: 11,
-                                            child: (isSelected &&
-                                                    totalSpent > 0)
+                                            child: (totalSpent > 0 && isCurrentMonthDay)
                                                 ? FittedBox(
                                                     fit: BoxFit.scaleDown,
                                                     child: Text(
@@ -452,8 +510,9 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                                         fontSize: 9,
                                                         fontWeight:
                                                             FontWeight.w900,
-                                                        color: AppColors
-                                                            .textPrimary,
+                                                        color: isSelected
+                                                            ? AppColors.textPrimary
+                                                            : AppColors.textSecondary,
                                                       ),
                                                     ),
                                                   )
@@ -583,12 +642,26 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: AppColors.textPrimary,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.primary,
+                                  const Color(0xFF41A5FF),
+                                ],
+                              ),
                               borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.35),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: Icon(
-                              Icons.add,
-                              color: AppColors.surface,
+                            child: const Icon(
+                              Icons.add_rounded,
+                              color: Colors.white,
                               size: 20,
                             ),
                           ),
@@ -615,10 +688,18 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.receipt_long_outlined,
-                                  size: 32,
-                                  color: AppColors.border,
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(alpha: 0.08),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.receipt_long_rounded,
+                                    size: 28,
+                                    color: AppColors.primary.withValues(alpha: 0.6),
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(

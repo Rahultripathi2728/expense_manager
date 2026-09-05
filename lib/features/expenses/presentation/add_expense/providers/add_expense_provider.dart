@@ -45,6 +45,7 @@ class SingleBillState {
   final Map<String, double>
   unequalAmounts; // for unequal split (userId -> amount)
   final List<ItemSplitState> items; // for itemwise split
+  final DateTime? date; // individual date for this bill
 
   SingleBillState({
     this.description = '',
@@ -54,6 +55,7 @@ class SingleBillState {
     this.selectedMemberIds = const [],
     this.unequalAmounts = const {},
     this.items = const [],
+    this.date,
   });
 
   SingleBillState copyWith({
@@ -64,6 +66,7 @@ class SingleBillState {
     List<String>? selectedMemberIds,
     Map<String, double>? unequalAmounts,
     List<ItemSplitState>? items,
+    DateTime? date,
   }) {
     return SingleBillState(
       description: description ?? this.description,
@@ -73,6 +76,7 @@ class SingleBillState {
       selectedMemberIds: selectedMemberIds ?? this.selectedMemberIds,
       unequalAmounts: unequalAmounts ?? this.unequalAmounts,
       items: items ?? this.items,
+      date: date ?? this.date,
     );
   }
 }
@@ -160,6 +164,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
         selectedMemberIds: selectedMemberIds,
         unequalAmounts: unequalAmounts,
         items: itemStates,
+        date: expense.expenseDate,
       );
 
       state = state.copyWith(
@@ -181,6 +186,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
             final initialBill = SingleBillState(
               selectedMemberIds: [user.id],
               unequalAmounts: {user.id: 0.0},
+              date: DateTime.now(),
             );
             state = state.copyWith(
               allMemberIds: [user.id],
@@ -188,7 +194,14 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
               activeBillIndex: 0,
             );
           } else {
-             state = state.copyWith(allMemberIds: [user.id]);
+            final updatedBills = state.bills.map((b) {
+              return b.copyWith(
+                selectedMemberIds: b.selectedMemberIds.isEmpty ? [user.id] : b.selectedMemberIds,
+                unequalAmounts: b.unequalAmounts.isEmpty ? {user.id: 0.0} : b.unequalAmounts,
+                date: b.date ?? DateTime.now(),
+              );
+            }).toList();
+            state = state.copyWith(allMemberIds: [user.id], bills: updatedBills);
           }
         }
       } else {
@@ -202,6 +215,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
           final initialBill = SingleBillState(
             selectedMemberIds: ids,
             unequalAmounts: {for (var id in ids) id: 0.0},
+            date: DateTime.now(),
           );
           state = state.copyWith(
             allMemberIds: ids,
@@ -209,7 +223,14 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
             activeBillIndex: 0,
           );
         } else {
-           state = state.copyWith(allMemberIds: ids);
+          final updatedBills = state.bills.map((b) {
+            return b.copyWith(
+              selectedMemberIds: b.selectedMemberIds.isEmpty ? ids : b.selectedMemberIds,
+              unequalAmounts: b.unequalAmounts.isEmpty ? {for (var id in ids) id: 0.0} : b.unequalAmounts,
+              date: b.date ?? DateTime.now(),
+            );
+          }).toList();
+          state = state.copyWith(allMemberIds: ids, bills: updatedBills);
         }
       }
     } catch (e) {
@@ -217,15 +238,49 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
     }
   }
 
-  void addBill() {
+  void initializeWithBills(List<SingleBillState> bills) {
+    if (bills.isEmpty) return;
+    final ids = state.allMemberIds;
+    final updated = bills.map((b) {
+      final members = b.selectedMemberIds.isNotEmpty ? b.selectedMemberIds : ids;
+      final unequal = b.unequalAmounts.isNotEmpty
+          ? b.unequalAmounts
+          : {for (var id in members) id: 0.0};
+      return b.copyWith(
+        selectedMemberIds: members,
+        unequalAmounts: unequal,
+        date: b.date ?? DateTime.now(),
+      );
+    }).toList();
+    state = state.copyWith(
+      bills: updated,
+      activeBillIndex: 0,
+    );
+  }
+
+  void addBill({DateTime? date}) {
     final list = List<SingleBillState>.from(state.bills);
+    final defaultDate = date ?? (state.bills.isNotEmpty ? state.bills[state.activeBillIndex].date : null) ?? DateTime.now();
     list.add(
       SingleBillState(
         selectedMemberIds: List<String>.from(state.allMemberIds),
         unequalAmounts: {for (var id in state.allMemberIds) id: 0.0},
+        date: defaultDate,
       ),
     );
     state = state.copyWith(bills: list, activeBillIndex: list.length - 1);
+  }
+
+  void updateDate(DateTime date) {
+    updateActiveBill((b) => b.copyWith(date: date));
+  }
+
+  void setBillDate(int index, DateTime date) {
+    final list = List<SingleBillState>.from(state.bills);
+    if (index >= 0 && index < list.length) {
+      list[index] = list[index].copyWith(date: date);
+      state = state.copyWith(bills: list);
+    }
   }
 
   void removeBill(int index) {
@@ -265,6 +320,14 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
 
   void updateCategory(String value) {
     updateActiveBill((b) => b.copyWith(category: value));
+  }
+
+  void setBillCategory(int index, String value) {
+    final list = List<SingleBillState>.from(state.bills);
+    if (index >= 0 && index < list.length) {
+      list[index] = list[index].copyWith(category: value);
+      state = state.copyWith(bills: list);
+    }
   }
 
   void updateAmount(double value) {
@@ -319,6 +382,10 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
       map[userId] = amount;
       return b.copyWith(unequalAmounts: map);
     });
+  }
+
+  void updateUnequalAmounts(Map<String, double> newAmounts) {
+    updateActiveBill((b) => b.copyWith(unequalAmounts: newAmounts));
   }
 
   void splitUnequallyEqually() {
@@ -476,22 +543,24 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
     try {
       final repo = _ref.read(expenseRepositoryProvider);
       for (final bill in state.bills) {
+        final categoryToSave = bill.category.trim().isEmpty ? 'misc' : bill.category.trim();
+        final billDate = bill.date ?? date ?? DateTime.now();
         if (groupId == null) {
           if (_existingExpense != null) {
             await repo.updatePersonalExpense(
               expenseId: _existingExpense!.id,
               description: bill.description,
               amount: bill.amount,
-              category: bill.category,
-              date: date ?? DateTime.now(),
+              category: categoryToSave,
+              date: billDate,
             );
           } else {
             await repo.createPersonalExpense(
               userId: user.id,
               description: bill.description,
               amount: bill.amount,
-              category: bill.category,
-              date: date ?? DateTime.now(),
+              category: categoryToSave,
+              date: billDate,
             );
           }
         } else {
@@ -557,11 +626,11 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
               expenseId: _existingExpense!.id,
               description: bill.description,
               amount: bill.amount,
-              category: bill.category,
+              category: categoryToSave,
               splitType: bill.splitType,
               splits: splitsPayload,
               items: itemsPayload,
-              date: date,
+              date: billDate,
             );
           } else {
             await repo.createGroupExpense(
@@ -569,11 +638,11 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
               userId: user.id,
               description: bill.description,
               amount: bill.amount,
-              category: bill.category,
+              category: categoryToSave,
               splitType: bill.splitType,
               splits: splitsPayload,
               items: itemsPayload,
-              date: date,
+              date: billDate,
             );
           }
         }
@@ -591,9 +660,20 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
   void initializeMembers(List<String> memberIds) {
     if (memberIds.isEmpty) return;
 
-    if (state.allMemberIds.length == memberIds.length &&
-        state.allMemberIds.every((id) => memberIds.contains(id))) {
-      if (state.bills.isNotEmpty) return;
+    if (state.bills.isNotEmpty) {
+      final updatedBills = state.bills.map((b) {
+        final selected = b.selectedMemberIds.isEmpty ? List<String>.from(memberIds) : b.selectedMemberIds;
+        final unequal = b.unequalAmounts.isEmpty ? {for (var id in memberIds) id: 0.0} : b.unequalAmounts;
+        return b.copyWith(
+          selectedMemberIds: selected,
+          unequalAmounts: unequal,
+        );
+      }).toList();
+      state = state.copyWith(
+        allMemberIds: memberIds,
+        bills: updatedBills,
+      );
+      return;
     }
 
     final initialBill = SingleBillState(

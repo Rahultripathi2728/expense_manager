@@ -9,11 +9,15 @@ import '../../../shared/services/categorize_service.dart';
 import '../../../core/utils/error_formatter.dart';
 import '../../../core/utils/throttler.dart';
 import '../domain/expense_model.dart';
+import '../domain/expense_item_model.dart';
 import '../data/expense_repository.dart';
-import '../../auth/data/auth_repository.dart';
 import '../../calendar/presentation/widgets/calendar_expense_card.dart'; // For group/profile providers
 import 'add_expense/add_expense_screen.dart';
 import 'utils/category_icon_helper.dart';
+import '../../auth/data/auth_repository.dart';
+import '../../settlement/data/settlement_repository.dart';
+import '../../settlement/presentation/settlement_page.dart';
+import '../../groups/presentation/group_detail_page.dart';
 
 class ExpenseDetailPage extends ConsumerStatefulWidget {
   final Expense expense;
@@ -60,22 +64,42 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
 
     if (confirm != true) return;
 
+    final currentUser = ref.read(authStateProvider).valueOrNull;
     setState(() => isDeleting = true);
     try {
-      await ref
-          .read(expenseRepositoryProvider)
-          .deleteExpense(widget.expense.id);
+      await ref.read(expenseRepositoryProvider).deleteExpense(
+        widget.expense.id,
+        deleterUserId: currentUser?.id,
+        deleterName: currentUser?.name,
+      );
 
       // Invalidate relevant providers
       ref.invalidate(monthlyExpensesProvider);
+      ref.invalidate(userCashFlowProvider);
+      if (widget.expense.groupId != null) {
+        ref.invalidate(groupBalancesProvider(widget.expense.groupId!));
+        ref.invalidate(groupAllExpensesProvider(widget.expense.groupId!));
+      }
+      ref.invalidate(userSplitsProvider);
 
       if (mounted) {
         HapticHelper.heavyTap();
         context.pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Expense deleted successfully'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('"${widget.expense.description}" deleted successfully'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -97,6 +121,8 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
   Widget build(BuildContext context) {
     final expense = widget.expense;
     final isGroup = expense.isGroup;
+    final currentUser = ref.watch(authStateProvider).valueOrNull;
+    final isOwner = currentUser != null && currentUser.id == expense.userId;
 
     // Fetch related details
     final profileAsync = ref.watch(profileByIdProvider(expense.userId));
@@ -106,10 +132,23 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
     final splitsAsync = isGroup
         ? ref.watch(expenseSplitsProvider(expense.id))
         : const AsyncValue.data([]);
+    final itemsAsync = (isGroup && expense.splitType == 'itemwise')
+        ? ref.watch(expenseItemsProvider(expense.id))
+        : const AsyncValue.data(<ExpenseItem>[]);
 
-    final user = ref.watch(authStateProvider).valueOrNull;
-    final isPayer = user != null && expense.userId == user.id;
-    final isLocked = expense.isSettled || !isPayer;
+    final groupBalancesAsync = isGroup && expense.groupId != null
+        ? ref.watch(groupBalancesProvider(expense.groupId!))
+        : const AsyncValue.data(null);
+
+    bool isLocked = expense.isSettled;
+    if (!isLocked && isGroup) {
+      final balancesData = groupBalancesAsync.valueOrNull;
+      if (balancesData != null && balancesData.lastSettlement != null) {
+        // If there's any settlement created AFTER this expense was added, this expense 
+        // was factored into that settlement, so modifying it would corrupt the ledger.
+        isLocked = expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) || expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt);
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -119,40 +158,39 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
-          if (!isLocked) ...[
-
-          IconButton(
-            icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
-            onPressed: () => _throttler.run(() async {
-              final group = expense.isGroup && expense.groupId != null
-                  ? await ref.read(groupByIdProvider(expense.groupId!).future)
-                  : null;
-              
-              if (!mounted) return;
-              if (context.mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AddExpenseScreen(group: group, existingExpense: expense),
-                  ),
-                );
-              }
-            }),
-          ),
-          if (isDeleting)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.error,
+          if (isOwner && (!isLocked || !isGroup)) ...[
+            IconButton(
+              icon: Icon(Icons.edit_outlined, color: AppColors.textPrimary),
+              onPressed: () => _throttler.run(() async {
+                final group = expense.isGroup && expense.groupId != null
+                    ? await ref.read(groupByIdProvider(expense.groupId!).future)
+                    : null;
+                
+                if (!mounted) return;
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddExpenseScreen(group: group, existingExpense: expense),
+                    ),
+                  );
+                }
+              }),
+            ),
+            if (isDeleting)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.error,
+                    ),
                   ),
                 ),
-              ),
-            )
+              )
             else
               IconButton(
                 icon: Icon(Icons.delete_outline, color: AppColors.error),
@@ -167,49 +205,8 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Category Icon
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Center(
-                child: Icon(
-                  CategoryIconHelper.getIcon(expense.category),
-                  color: AppColors.textPrimary,
-                  size: 40,
-                ),
-              ),
-            ),
+            CategoryIconHelper.buildBadge(expense.category, size: 84, iconSize: 42),
             const SizedBox(height: AppSpacing.md),
-
-            if (expense.isSettled)
-              Container(
-                margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Settled',
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
 
             // Description & Amount
             Text(
@@ -230,6 +227,32 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                 color: AppColors.textPrimary,
               ),
             ),
+            if (isLocked) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.borderLight),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_rounded, size: 14, color: AppColors.textSecondary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Locked (Settlement Recorded)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.xl),
 
             // Info Card
@@ -281,6 +304,86 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
             ),
 
             if (isGroup) ...[
+              if (expense.splitType == 'itemwise') ...[
+                const SizedBox(height: AppSpacing.xl),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'ITEM DETAILS',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                itemsAsync.when(
+                  loading: () => const CircularProgressIndicator(),
+                  error: (e, _) => Text('Error: $e'),
+                  data: (items) {
+                    final currentUser = ref.watch(authStateProvider).valueOrNull;
+                    if (items.isEmpty) return const SizedBox.shrink();
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.borderLight),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: AppColors.borderLight),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final isParticipating = currentUser != null && item.participants.contains(currentUser.id);
+                          final share = isParticipating ? (item.itemAmount / item.participants.length) : 0.0;
+                          return ListTile(
+                            title: Text(
+                              item.itemName.isNotEmpty ? item.itemName : 'Item ${index + 1}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              'Total: ${DateHelpers.formatCurrency(item.itemAmount)} • Split among ${item.participants.length}',
+                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                            trailing: isParticipating
+                                ? Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        'Your Share',
+                                        style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                                      ),
+                                      Text(
+                                        DateHelpers.formatCurrency(share),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    'Not involved',
+                                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                  },
+                ),
+              ],
               const SizedBox(height: AppSpacing.xl),
               Align(
                 alignment: Alignment.centerLeft,
@@ -304,7 +407,11 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: AppColors.borderLight),
                     ),
-                    child: ListView.separated(
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(16),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListView.separated(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: splits.length,
@@ -333,23 +440,61 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                                 loading: () => const Text('...'),
                                 error: (_, __) => const Text('Error'),
                               ),
-                          trailing: Text(
-                            DateHelpers.formatCurrency(split.amountOwed),
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: split.isIncluded
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                              decoration: split.isIncluded
-                                  ? null
-                                  : TextDecoration.lineThrough,
-                            ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                DateHelpers.formatCurrency(split.amountOwed),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: split.isIncluded
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                                  decoration: split.isIncluded
+                                      ? null
+                                      : TextDecoration.lineThrough,
+                                ),
+                              ),
+                              if (split.isIncluded && split.amountOwed > 0) ...[
+                                Builder(builder: (context) {
+                                  bool isPayer = split.userId == expense.userId;
+                                  bool userSettled = false;
+                                  if (expense.isSettled) {
+                                    userSettled = true;
+                                  } else {
+                                    final balancesData = groupBalancesAsync.valueOrNull;
+                                    if (balancesData != null) {
+                                      final isExpenseUnsettled = balancesData.unsettledExpenses.any((u) => u.id == expense.id);
+                                      if (!isExpenseUnsettled && balancesData.lastSettlement != null &&
+                                          (expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) ||
+                                              expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt))) {
+                                        userSettled = true;
+                                      }
+                                    }
+                                  }
+                                  
+                                  String statusText = isPayer ? 'Paid' : (userSettled ? 'Settled' : 'Pending');
+                                  Color statusColor = isPayer || userSettled ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+                                  
+                                  return Text(
+                                    statusText,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: statusColor,
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ],
                           ),
                         );
                       },
                     ),
-                  );
+                  ),
+                );
                 },
               ),
             ],

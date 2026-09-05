@@ -208,10 +208,17 @@ class _GroupExpenseSheetState extends ConsumerState<GroupExpenseSheet> {
                             value: c,
                             child: Row(
                               children: [
-                                Icon(
-                                  CategoryIconHelper.getIcon(c),
-                                  color: AppColors.textPrimary,
-                                  size: 18,
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.categoryColor(c).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Icon(
+                                    CategoryIconHelper.getIcon(c),
+                                    color: AppColors.categoryColor(c),
+                                    size: 16,
+                                  ),
                                 ),
                                 const SizedBox(width: AppSpacing.sm),
                                 Text(CategorizeService.displayName(c)),

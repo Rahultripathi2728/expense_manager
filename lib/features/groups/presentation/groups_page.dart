@@ -38,57 +38,60 @@ class GroupsPage extends ConsumerWidget {
       ],
     );
 
-    final buttonsRow = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        OutlinedButton.icon(
-          onPressed: () => _showJoinGroup(context, ref),
-          icon: Icon(
-            Icons.person_add_alt_1_outlined,
-            size: 16,
-            color: AppColors.textPrimary,
-          ),
-          label: const Text('Join Group'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.textPrimary,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            minimumSize: Size.zero,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            side: BorderSide(color: AppColors.border),
-            textStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
+    final joinButton = OutlinedButton.icon(
+      onPressed: () => _showJoinGroup(context, ref),
+      icon: Icon(Icons.group_add_rounded, size: 18, color: AppColors.primary),
+      label: const Text('Join Group'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        backgroundColor: AppColors.primary.withValues(alpha: 0.06),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        minimumSize: const Size(0, 44),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: () => _showCreateGroup(context, ref),
-          icon: Icon(Icons.add, size: 16, color: AppColors.surface),
-          label: const Text('Create Group'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.textPrimary,
-            foregroundColor: AppColors.surface,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            minimumSize: Size.zero,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            textStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
+        side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
         ),
-      ],
+      ),
+    );
+
+    final createButton = ElevatedButton.icon(
+      onPressed: () => _showCreateGroup(context, ref),
+      icon: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
+      label: const Text('Create Group'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        minimumSize: const Size(0, 44),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        textStyle: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+      ),
     );
 
     if (isNarrow) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [titleCol, const SizedBox(height: 16), buttonsRow],
+        children: [
+          titleCol,
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: joinButton),
+              const SizedBox(width: 10),
+              Expanded(child: createButton),
+            ],
+          ),
+        ],
       );
     } else {
       return Row(
@@ -97,7 +100,17 @@ class GroupsPage extends ConsumerWidget {
         children: [
           Expanded(child: titleCol),
           const SizedBox(width: 16),
-          Padding(padding: const EdgeInsets.only(top: 4), child: buttonsRow),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                joinButton,
+                const SizedBox(width: 10),
+                createButton,
+              ],
+            ),
+          ),
         ],
       );
     }
@@ -298,7 +311,16 @@ class GroupsPage extends ConsumerWidget {
                                   .read(groupRepositoryProvider)
                                   .createGroup(name, desc.isEmpty ? null : desc, user.id);
                               ref.invalidate(userGroupsProvider);
-                              if (context.mounted) Navigator.pop(context);
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Group "$name" created successfully!', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                                    backgroundColor: const Color(0xFF10B981),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
                             } finally {
                               if (context.mounted) setState(() => loading = false);
                             }
@@ -405,7 +427,16 @@ class GroupsPage extends ConsumerWidget {
                                   .read(groupRepositoryProvider)
                                   .joinGroup(code, currentUser.id);
                               ref.invalidate(userGroupsProvider);
-                              if (context.mounted) Navigator.pop(context);
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Joined group successfully!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                                    backgroundColor: Color(0xFF10B981),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
                             } catch (e) {
                               setState(
                                 () => error = 'Invalid code or already joined',
@@ -453,8 +484,24 @@ class _GroupCard extends StatefulWidget {
 class _GroupCardState extends State<_GroupCard> {
   bool _isHovered = false;
 
+  static const _gradients = [
+    [Color(0xFF2481E9), Color(0xFF00CEFF)], // Blue to Cyan
+    [Color(0xFF6366F1), Color(0xFF8B5CF6)], // Indigo to Purple
+    [Color(0xFFEC4899), Color(0xFFF43F5E)], // Rose to Pink
+    [Color(0xFF10B981), Color(0xFF14B8A6)], // Emerald to Teal
+    [Color(0xFFF59E0B), Color(0xFFF97316)], // Amber to Orange
+    [Color(0xFF8B5CF6), Color(0xFFD946EF)], // Purple to Fuchsia
+  ];
+
+  List<Color> _getGroupGradient(String name) {
+    if (name.isEmpty) return _gradients[0];
+    final index = name.codeUnits.fold(0, (sum, c) => sum + c) % _gradients.length;
+    return _gradients[index];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final gradientColors = _getGroupGradient(widget.group.name);
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -492,63 +539,120 @@ class _GroupCardState extends State<_GroupCard> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F3F3),
-                borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: gradientColors,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: gradientColors[0].withValues(alpha: 0.28),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              child: Icon(
-                Icons.group_outlined,
-                color: AppColors.textPrimary,
-                size: 24,
+              child: Center(
+                child: Text(
+                  widget.group.name.trim().isNotEmpty
+                      ? widget.group.name.trim()[0].toUpperCase()
+                      : 'G',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
             title: Row(
               children: [
-                Text(
-                  widget.group.name,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: AppColors.textPrimary,
+                Expanded(
+                  child: Text(
+                    widget.group.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (widget.isAdmin) ...[
-                  const SizedBox(width: 6),
-                  const Text('👑', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Admin',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
+                    ),
+                  ),
                 ],
               ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 4),
-                Text(
-                  'Join Code: ${widget.group.joinCode}',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: widget.group.joinCode));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Join Code "${widget.group.joinCode}" copied!',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                            ),
+                            backgroundColor: const Color(0xFF1E293B),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.borderLight),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.tag_rounded, size: 12, color: AppColors.textSecondary),
+                            const SizedBox(width: 2),
+                            Text(
+                              widget.group.joinCode,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(Icons.copy_rounded, size: 11, color: AppColors.textTertiary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            trailing: PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
-              onSelected: (value) {
-                if (value == 'copy') {
-                  Clipboard.setData(ClipboardData(text: widget.group.joinCode));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Join Code "${widget.group.joinCode}" copied!',
-                      ),
-                      backgroundColor: AppColors.textPrimary,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'copy',
-                  child: Text('Copy Join Code'),
-                ),
-              ],
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textTertiary,
+              size: 20,
             ),
             onTap: widget.onTap,
           ),

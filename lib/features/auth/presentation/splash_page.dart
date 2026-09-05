@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../shared/widgets/split_pro_logo.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -37,11 +38,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
 
-    // Icon: Scale from 0.5 → 1.0 with overshoot (0% → 40%)
-    _iconScale = Tween<double>(begin: 0.4, end: 1.0).animate(
+    // Icon: Scale from 0.3 → 1.0 with spring bounce (0% → 50%)
+    _iconScale = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.0, 0.45, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.55, curve: Curves.elasticOut),
       ),
     );
 
@@ -49,42 +50,42 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _iconFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.0, 0.3, curve: Curves.easeIn),
+        curve: const Interval(0.0, 0.35, curve: Curves.easeIn),
       ),
     );
 
-    // Title: Fade + slide (35% → 65%)
+    // Title: Fade + slide (40% → 70%)
     _titleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.35, 0.65, curve: Curves.easeOut),
+        curve: const Interval(0.40, 0.70, curve: Curves.easeOut),
       ),
     );
-    _titleSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
+    _titleSlide = Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero)
         .animate(
           CurvedAnimation(
             parent: _mainController,
-            curve: const Interval(0.35, 0.65, curve: Curves.easeOutCubic),
+            curve: const Interval(0.40, 0.70, curve: Curves.easeOutCubic),
           ),
         );
 
-    // Subtitle: Fade + slide (55% → 85%)
+    // Subtitle: Fade + slide (60% → 90%)
     _subtitleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _mainController,
-        curve: const Interval(0.55, 0.85, curve: Curves.easeOut),
+        curve: const Interval(0.60, 0.90, curve: Curves.easeOut),
       ),
     );
     _subtitleSlide =
-        Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
+        Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _mainController,
-            curve: const Interval(0.55, 0.85, curve: Curves.easeOutCubic),
+            curve: const Interval(0.60, 0.90, curve: Curves.easeOutCubic),
           ),
         );
 
-    // Pulse: subtle breathing glow
-    _pulseAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
+    // Pulse: continuous gentle floating & breathing glow
+    _pulseAnimation = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
@@ -106,36 +107,43 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         child: AnimatedBuilder(
           animation: Listenable.merge([_mainController, _pulseController]),
           builder: (context, _) {
+            // Subtle floating offset for continuous organic motion
+            final floatOffset = (1.0 - _pulseAnimation.value) * 8.0;
+
             return Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Pulsing glow ring behind icon
-                Transform.scale(
-                  scale: _iconScale.value,
-                  child: Opacity(
-                    opacity: _iconFade.value,
+                // Floating & Pulsing ambient glow with new Wallet logo
+                Transform.translate(
+                  offset: Offset(0, -floatOffset),
+                  child: Transform.scale(
+                    scale: _iconScale.value,
+                    child: Opacity(
+                      opacity: _iconFade.value,
                       child: Container(
                         decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.textPrimary.withValues(
-                                alpha: 0.15 * _pulseAnimation.value,
+                              color: AppColors.primary.withValues(
+                                alpha: 0.35 * _pulseAnimation.value,
                               ),
-                              blurRadius: 30 + (10 * _pulseAnimation.value),
-                              spreadRadius: 5 * _pulseAnimation.value,
+                              blurRadius: 36 + (14 * _pulseAnimation.value),
+                              spreadRadius: 4 * _pulseAnimation.value,
+                              offset: const Offset(0, 8),
+                            ),
+                            BoxShadow(
+                              color: const Color(0xFF10B981).withValues(
+                                alpha: 0.20 * _pulseAnimation.value,
+                              ),
+                              blurRadius: 24,
+                              spreadRadius: 2 * _pulseAnimation.value,
                             ),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: Image.asset(
-                            'assets/app_icon.png',
-                            width: 112,
-                            height: 112,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
+                        child: const SplitProLogo(size: 116),
                       ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
@@ -146,7 +154,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                   child: SlideTransition(
                     position: _titleSlide,
                     child: Text(
-                      'Expense Manager',
+                      'Split Pro',
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
                             fontWeight: FontWeight.w800,
@@ -164,9 +172,10 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                   child: SlideTransition(
                     position: _subtitleSlide,
                     child: Text(
-                      'Track your daily spending',
+                      'Split bills • Track expenses • Settle easily',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
                       ),
                     ),

@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/appwrite_client.dart';
@@ -16,9 +16,8 @@ import '../../../core/services/cache_service.dart';
 class ExpenseRepository {
   final TablesDB _tablesDB;
   final CacheService _cacheService;
-  final Account _account;
 
-  ExpenseRepository(this._tablesDB, this._cacheService, this._account);
+  ExpenseRepository(this._tablesDB, this._cacheService);
 
   Future<Expense> createPersonalExpense({
     required String userId,
@@ -76,7 +75,6 @@ class ExpenseRepository {
       'category': category,
       'expenseType': 'group',
       'splitType': splitType,
-      'splitItems': items != null ? jsonEncode(items) : null,
       'expenseDate': expenseDate,
       'createdAt': createdAt,
       'isSettled': false,
@@ -91,6 +89,18 @@ class ExpenseRepository {
         'userId': s['userId'],
         'amountOwed': s['amountOwed'],
         'isIncluded': s['isIncluded'] ?? true,
+      };
+    }).toList();
+
+    // Prepare items
+    final preparedItems = (items ?? []).map((i) {
+      final itemId = ID.unique();
+      return {
+        'id': itemId,
+        'expenseId': expenseId,
+        'itemName': i['itemName'],
+        'itemAmount': i['itemAmount'],
+        'participants': i['participants'],
       };
     }).toList();
 
@@ -117,7 +127,18 @@ class ExpenseRepository {
       );
     }));
 
-    }));
+    // Batch-write items in parallel
+    if (preparedItems.isNotEmpty) {
+      await Future.wait(preparedItems.map((item) {
+        final data = Map<String, dynamic>.from(item)..remove('id');
+        return _tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.expenseItemsCollection,
+          rowId: item['id'],
+          data: data,
+        );
+      }));
+    }
     
     // Create notifications for other users (fire-and-forget in parallel)
     String creatorName = 'A group member';
@@ -132,9 +153,13 @@ class ExpenseRepository {
       }
     } catch (_) {}
 
-    // Batch-write notifications in parallel
+    // Batch-write notifications in parallel (deduplicated by userId)
+    final notifiedUserIds = <String>{};
     final notifFutures = preparedSplits
-        .where((split) => split['userId'] != userId && split['isIncluded'] == true)
+        .where((split) =>
+            split['userId'] != userId &&
+            split['isIncluded'] == true &&
+            notifiedUserIds.add(split['userId'] as String))
         .map((split) {
       final notifId = ID.unique();
       return _tablesDB.createRow(
@@ -210,7 +235,6 @@ class ExpenseRepository {
       'amount': amount,
       'category': category,
       'splitType': splitType,
-      'splitItems': items != null ? jsonEncode(items) : null,
       'expenseDate': expenseDate,
     };
 
@@ -223,6 +247,18 @@ class ExpenseRepository {
         'userId': s['userId'],
         'amountOwed': s['amountOwed'],
         'isIncluded': s['isIncluded'] ?? true,
+      };
+    }).toList();
+
+    // Prepare items
+    final preparedItems = (items ?? []).map((i) {
+      final itemId = ID.unique();
+      return {
+        'id': itemId,
+        'expenseId': expenseId,
+        'itemName': i['itemName'],
+        'itemAmount': i['itemAmount'],
+        'participants': i['participants'],
       };
     }).toList();
 
@@ -252,6 +288,24 @@ class ExpenseRepository {
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.expenseSplitsCollection,
         rowId: split['id'],
+        data: data,
+      );
+    }
+
+    final existingItems = await _tablesDB.listRows(
+      databaseId: AppConstants.databaseId,
+      tableId: AppConstants.expenseItemsCollection,
+      queries: [Query.equal('expenseId', expenseId)],
+    );
+    for (final i in existingItems.rows) {
+      await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseItemsCollection, rowId: i.$id);
+    }
+    for (final item in preparedItems) {
+      final data = Map<String, dynamic>.from(item)..remove('id');
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expenseItemsCollection,
+        rowId: item['id'],
         data: data,
       );
     }
@@ -294,33 +348,6 @@ class ExpenseRepository {
     _cacheService.cacheExpenses(expenses);
 
     return expenses;
-  }
-
-  Future<List<Expense>> getExpensesForDateRange(String userId, DateTime start, DateTime end) async {
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
-      final cached = _cacheService.getCachedExpenses();
-      return cached
-          .where((e) =>
-              e.userId == userId &&
-              !e.expenseDate.isBefore(start) &&
-              !e.expenseDate.isAfter(end))
-          .toList()
-        ..sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
-    }
-    
-    final res = await _tablesDB.listRows(
-      databaseId: AppConstants.databaseId,
-      tableId: AppConstants.expensesCollection,
-      queries: [
-        Query.equal('userId', userId),
-        Query.greaterThanEqual('expenseDate', start.toIso8601String()),
-        Query.lessThanEqual('expenseDate', end.toIso8601String()),
-        Query.orderDesc('expenseDate'),
-        Query.limit(AppConstants.maxPageSize),
-      ],
-    );
-    return res.rows.map((doc) => Expense.fromMap(doc.dataWithId)).toList();
   }
 
   Future<List<Expense>> getGroupExpenses(String groupId) async {
@@ -383,35 +410,31 @@ class ExpenseRepository {
     }
   }
 
-  Future<void> deleteExpense(String expenseId) async {
+  Future<void> deleteExpense(
+    String expenseId, {
+    String? deleterUserId,
+    String? deleterName,
+  }) async {
     final connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult.contains(ConnectivityResult.none)) {
       throw Exception('No internet connection. Please connect to the internet to delete an expense.');
     }
     
+    String? groupId;
+    String? description;
+    double? amount;
+    final List<String> participantUserIds = [];
+
     try {
-      final doc = await _tablesDB.getRow(
+      final expDoc = await _tablesDB.getRow(
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.expensesCollection,
         rowId: expenseId,
       );
-      final expense = Expense.fromMap(doc.dataWithId);
-
-      if (expense.isSettled) {
-        throw Exception('Cannot delete a settled expense.');
-      }
-
-      final user = await _account.get();
-      if (expense.userId != user.$id) {
-        throw Exception('You can only delete expenses you created.');
-      }
-    } catch (e) {
-      if (e is AppwriteException && e.code == 404) {
-        // Expense already deleted or doesn't exist
-        return;
-      }
-      rethrow;
-    }
+      groupId = expDoc.data['groupId'] as String?;
+      description = expDoc.data['description'] as String? ?? 'Expense';
+      amount = (expDoc.data['amount'] as num?)?.toDouble() ?? 0.0;
+    } catch (_) {}
 
     try {
       final existingSplits = await _tablesDB.listRows(
@@ -420,7 +443,15 @@ class ExpenseRepository {
         queries: [Query.equal('expenseId', expenseId)],
       );
       for (final s in existingSplits.rows) {
-        await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseSplitsCollection, rowId: s.$id);
+        final splitUserId = s.data['userId'] as String?;
+        if (splitUserId != null) {
+          participantUserIds.add(splitUserId);
+        }
+        await _tablesDB.deleteRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.expenseSplitsCollection,
+          rowId: s.$id,
+        );
       }
 
       final existingItems = await _tablesDB.listRows(
@@ -429,7 +460,11 @@ class ExpenseRepository {
         queries: [Query.equal('expenseId', expenseId)],
       );
       for (final i in existingItems.rows) {
-        await _tablesDB.deleteRow(databaseId: AppConstants.databaseId, tableId: AppConstants.expenseItemsCollection, rowId: i.$id);
+        await _tablesDB.deleteRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.expenseItemsCollection,
+          rowId: i.$id,
+        );
       }
     } catch (_) {}
 
@@ -438,6 +473,67 @@ class ExpenseRepository {
       tableId: AppConstants.expensesCollection,
       rowId: expenseId,
     );
+
+    // Notify group members if this was a group expense
+    if (groupId != null && groupId.isNotEmpty) {
+      try {
+        String name = deleterName ?? '';
+        if (name.isEmpty && deleterUserId != null) {
+          try {
+            final profileRes = await _tablesDB.listRows(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.profilesCollection,
+              queries: [Query.equal(r'$id', deleterUserId)],
+            );
+            if (profileRes.rows.isNotEmpty) {
+              name = profileRes.rows.first.data['name'] ?? 'A member';
+            }
+          } catch (_) {}
+        }
+        if (name.isEmpty) name = 'A member';
+
+        // Also fetch all members of the group to ensure everyone gets notified
+        final groupMembersRes = await _tablesDB.listRows(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.groupMembersCollection,
+          queries: [Query.equal('groupId', groupId)],
+        );
+        for (final gm in groupMembersRes.rows) {
+          final mUserId = gm.data['userId'] as String?;
+          if (mUserId != null) participantUserIds.add(mUserId);
+        }
+
+        final notifiedUserIds = <String>{};
+        final notifFutures = participantUserIds
+            .where((uId) => uId != deleterUserId && notifiedUserIds.add(uId))
+            .map((uId) {
+          return _tablesDB.createRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.notificationsCollection,
+            rowId: ID.unique(),
+            data: {
+              'userId': uId,
+              'type': 'expense_deleted',
+              'title': 'Expense Deleted',
+              'body': '$name deleted "$description" (₹${(amount ?? 0).toStringAsFixed(0)})',
+              'isRead': false,
+              'createdAt': DateTime.now().toIso8601String(),
+            },
+            permissions: [
+              Permission.read(Role.users()),
+              Permission.update(Role.users()),
+              Permission.delete(Role.users()),
+            ],
+          );
+        });
+
+        if (notifFutures.isNotEmpty) {
+          await Future.wait(notifFutures);
+        }
+      } catch (e) {
+        debugPrint('Error dispatching expense deletion notifications: $e');
+      }
+    }
   }
 }
 
@@ -445,7 +541,6 @@ final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   return ExpenseRepository(
     ref.watch(appwriteTablesDBProvider),
     ref.watch(cacheServiceProvider),
-    ref.watch(appwriteAccountProvider),
   );
 });
 
@@ -461,13 +556,24 @@ class MonthlyExpensesNotifier extends FamilyAsyncNotifier<List<Expense>, DateTim
     final groupsAsync = ref.watch(userGroupsProvider);
     final groups = groupsAsync.valueOrNull ?? [];
 
+    // Get all splits where current user owes an amount > 0
+    final userSplits = await repo.getUserSplits(user.id);
+    final myExpenseIds = userSplits
+        .where((s) => s.amountOwed > 0)
+        .map((s) => s.expenseId)
+        .toSet();
+
     final List<Expense> allGroupExpenses = [];
     
     if (groups.isNotEmpty) {
       for (final g in groups) {
         final groupExps = await repo.getGroupExpenses(g.id);
         allGroupExpenses.addAll(
-          groupExps.where((e) => DateHelpers.isSameMonth(e.expenseDate, month)),
+          groupExps.where((e) {
+            if (!DateHelpers.isSameMonth(e.expenseDate, month)) return false;
+            // Only include if created by current user OR current user has a share in it
+            return e.userId == user.id || myExpenseIds.contains(e.id);
+          }),
         );
       }
     }
@@ -516,48 +622,26 @@ final monthlyExpensesProvider = AsyncNotifierProvider.family<
   MonthlyExpensesNotifier.new,
 );
 
-class DateRangeExpensesNotifier extends FamilyAsyncNotifier<List<Expense>, DateTimeRange> {
-  @override
-  Future<List<Expense>> build(DateTimeRange range) async {
-    final user = ref.watch(authStateProvider).valueOrNull;
-    if (user == null) return [];
-
-    final repo = ref.watch(expenseRepositoryProvider);
-    final created = await repo.getExpensesForDateRange(user.id, range.start, range.end);
-
-    final groupsAsync = ref.watch(userGroupsProvider);
-    final groups = groupsAsync.valueOrNull ?? [];
-
-    final List<Expense> allGroupExpenses = [];
-    
-    if (groups.isNotEmpty) {
-      for (final g in groups) {
-        final groupExps = await repo.getGroupExpenses(g.id);
-        allGroupExpenses.addAll(
-          groupExps.where((e) => !e.expenseDate.isBefore(range.start) && !e.expenseDate.isAfter(range.end)),
-        );
-      }
-    }
-
-    final Map<String, Expense> merged = {};
-    for (final e in created) {
-      merged[e.id] = e;
-    }
-    for (final e in allGroupExpenses) {
-      merged[e.id] = e;
-    }
-
-    return merged.values.toList()..sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
-  }
-}
-
-final dateRangeExpensesProvider = AsyncNotifierProvider.family<
-    DateRangeExpensesNotifier, List<Expense>, DateTimeRange>(
-  DateRangeExpensesNotifier.new,
-);
-
 final userSplitsProvider = FutureProvider<List<ExpenseSplit>>((ref) async {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return [];
   return ref.watch(expenseRepositoryProvider).getUserSplits(user.id);
+});
+
+final monthlyExpenseItemsProvider = FutureProvider.family<List<ExpenseItem>, DateTime>((ref, month) async {
+  final expensesAsync = ref.watch(monthlyExpensesProvider(month));
+  final expenses = expensesAsync.valueOrNull ?? [];
+  if (expenses.isEmpty) return [];
+
+  final repo = ref.watch(expenseRepositoryProvider);
+  final List<ExpenseItem> allItems = [];
+  
+  final groupExpenses = expenses.where((e) => e.isGroup).toList();
+  final futures = groupExpenses.map((e) => repo.getExpenseItems(e.id));
+  final results = await Future.wait(futures);
+  
+  for (final items in results) {
+    allItems.addAll(items);
+  }
+  return allItems;
 });
