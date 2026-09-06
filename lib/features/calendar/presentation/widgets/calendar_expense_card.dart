@@ -102,17 +102,17 @@ class CalendarExpenseCard extends ConsumerWidget {
 
     final splits = splitsAsync.valueOrNull ?? [];
 
+    final balancesData = groupBalancesAsync.valueOrNull;
     bool isSettled = expense.isSettled;
-    if (!isSettled && isGroup) {
-      final balancesData = groupBalancesAsync.valueOrNull;
-      if (balancesData != null) {
-        if (balancesData.unsettledExpenses.any((u) => u.id == expense.id)) {
-          isSettled = false;
-        } else if (balancesData.lastSettlement != null &&
-            (expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) ||
-                expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt))) {
-          isSettled = true;
-        }
+    if (!isSettled && isGroup && balancesData != null) {
+      isSettled = balancesData.isExpenseFullySettled(expense);
+    }
+
+    bool isMyShareSettled = false;
+    if (isGroup && !isSettled && currentUser != null && balancesData != null && expense.userId != currentUser.id) {
+      final remaining = balancesData.remainingOwedPerUserPerExpense[expense.id]?[currentUser.id];
+      if (remaining != null && remaining <= AppConstants.splitEpsilon) {
+        isMyShareSettled = true;
       }
     }
 
@@ -325,6 +325,37 @@ class CalendarExpenseCard extends ConsumerWidget {
                                   ),
                                 ),
 
+                              if (isMyShareSettled)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.check,
+                                        size: 12,
+                                        color: Color(0xFF16A34A),
+                                      ),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'Your share settled',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF16A34A),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
                               // Creator text
                               Text(
                                 isVirtuallyPersonal
@@ -355,12 +386,17 @@ class CalendarExpenseCard extends ConsumerWidget {
                               }
 
                               final shareAmount = overrideShareAmount ?? mySplit.amountOwed;
+                              final isUserPayer = expense.userId == currentUser.id;
 
                               return Text(
-                                'Share: ${DateHelpers.formatCurrency(shareAmount)}',
+                                isUserPayer
+                                    ? 'You paid full'
+                                    : (isMyShareSettled
+                                        ? 'Share: ${DateHelpers.formatCurrency(shareAmount)} (Paid)'
+                                        : 'Share: ${DateHelpers.formatCurrency(shareAmount)}'),
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                  color: isMyShareSettled ? const Color(0xFF16A34A) : AppColors.textSecondary,
                                   fontWeight: FontWeight.w500,
                                 ),
                               );

@@ -1,5 +1,6 @@
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../app/constants/app_constants.dart';
 import '../../../core/utils/row_helpers.dart';
@@ -19,7 +20,23 @@ class ProfileRepository {
         queries: [Query.equal('userId', userId)],
       );
       if (res.rows.isEmpty) return null;
-      return Profile.fromMap(res.rows.first.dataWithId);
+      var profile = Profile.fromMap(res.rows.first.dataWithId);
+
+      // Hydrate local cache for offline/extended fields
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final localUpi = prefs.getString('user_upi_$userId');
+        final localUsername = prefs.getString('user_username_$userId');
+        final localAvatar = prefs.getString('user_avatar_$userId');
+
+        profile = profile.copyWith(
+          upiId: profile.upiId ?? localUpi,
+          username: profile.username ?? localUsername,
+          avatarUrl: profile.avatarUrl ?? localAvatar,
+        );
+      } catch (_) {}
+
+      return profile;
     } catch (e) {
       return null;
     }
@@ -39,13 +56,56 @@ class ProfileRepository {
   }
 
   Future<Profile> updateProfile(Profile profile) async {
-    final res = await _tablesDB.updateRow(
-      databaseId: AppConstants.databaseId,
-      tableId: AppConstants.profilesCollection,
-      rowId: profile.id,
-      data: profile.toMap(),
-    );
-    return Profile.fromMap(res.dataWithId);
+    // Save to SharedPreferences for instant resilience
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (profile.upiId != null) {
+        await prefs.setString('user_upi_${profile.userId}', profile.upiId!);
+      }
+      if (profile.username != null) {
+        await prefs.setString('user_username_${profile.userId}', profile.username!);
+      }
+      if (profile.avatarUrl != null) {
+        await prefs.setString('user_avatar_${profile.userId}', profile.avatarUrl!);
+      }
+    } catch (_) {}
+
+    final data = profile.toMap();
+    if (profile.upiId != null) data['upiId'] = profile.upiId;
+
+    try {
+      final res = await _tablesDB.updateRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        rowId: profile.id,
+        data: data,
+      );
+      return Profile.fromMap(res.dataWithId).copyWith(
+        upiId: profile.upiId,
+        username: profile.username,
+        avatarUrl: profile.avatarUrl,
+      );
+    } catch (e) {
+      // Fallback if Appwrite rejects custom columns like upiId
+      final fallbackData = <String, dynamic>{
+        'userId': profile.userId,
+        'fullName': profile.fullName,
+        'avatarUrl': profile.avatarUrl,
+        'monthlyBudget': profile.monthlyBudget,
+        'createdAt': profile.createdAt.toIso8601String(),
+      };
+      final res = await _tablesDB.updateRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        rowId: profile.id,
+        data: fallbackData,
+      );
+      return Profile.fromMap(res.dataWithId).copyWith(
+        upiId: profile.upiId,
+        username: profile.username,
+        avatarUrl: profile.avatarUrl,
+      );
+    }
   }
 }
 

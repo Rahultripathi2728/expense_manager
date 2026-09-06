@@ -2,6 +2,7 @@ class Profile {
   final String id;
   final String userId;
   final String fullName;
+  final String? username;
   final String? avatarUrl;
   final double monthlyBudget;
   final String? upiId;
@@ -11,6 +12,7 @@ class Profile {
     required this.id,
     required this.userId,
     required this.fullName,
+    this.username,
     this.avatarUrl,
     this.monthlyBudget = 0,
     this.upiId,
@@ -22,6 +24,7 @@ class Profile {
       id: map['\$id'] ?? '',
       userId: map['userId'] ?? '',
       fullName: map['fullName'] ?? '',
+      username: map['username'],
       avatarUrl: map['avatarUrl'],
       monthlyBudget: (map['monthlyBudget'] ?? 0).toDouble(),
       upiId: map['upiId'],
@@ -37,14 +40,13 @@ class Profile {
       'monthlyBudget': monthlyBudget,
       'createdAt': createdAt.toIso8601String(),
     };
-    // Appwrite strict schema rejects unknown attributes.
-    // If upiId is added to the collection later, we can uncomment this.
-    // if (upiId != null) map['upiId'] = upiId;
+    if (username != null) map['username'] = username;
     return map;
   }
 
   Profile copyWith({
     String? fullName,
+    String? username,
     String? avatarUrl,
     double? monthlyBudget,
     String? upiId,
@@ -53,6 +55,7 @@ class Profile {
       id: id,
       userId: userId,
       fullName: fullName ?? this.fullName,
+      username: username ?? this.username,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       monthlyBudget: monthlyBudget ?? this.monthlyBudget,
       upiId: upiId ?? this.upiId,

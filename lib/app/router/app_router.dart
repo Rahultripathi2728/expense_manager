@@ -24,10 +24,14 @@ import '../../features/settlement/presentation/payment_summary_page.dart';
 import '../../features/expenses/domain/expense_model.dart';
 import '../../features/groups/presentation/groups_page.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
+import '../../features/groups/presentation/group_balances_detail_page.dart';
 import '../../features/groups/domain/group_model.dart';
 import '../../features/items/presentation/items_page.dart';
 import '../../features/items/presentation/add_item_screen.dart';
 import '../../features/profile/presentation/profile_page.dart';
+import '../../features/profile/presentation/edit_profile_page.dart';
+import '../../features/profile/presentation/change_password_page.dart';
+import '../../features/profile/presentation/about_page.dart';
 import '../../features/notifications/presentation/notifications_page.dart';
 import '../../shared/widgets/app_shell.dart';
 import '../../features/auth/domain/user_model.dart';
@@ -191,7 +195,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             GroupDetailPage(groupId: state.pathParameters['groupId']!),
       ),
+      GoRoute(
+        path: '/group/:groupId/balances-detail',
+        builder: (_, state) =>
+            GroupBalancesDetailPage(groupId: state.pathParameters['groupId']!),
+      ),
       GoRoute(path: '/profile', builder: (_, __) => const ProfilePage()),
+      GoRoute(
+        path: '/profile/edit',
+        builder: (_, __) => const EditProfilePage(),
+      ),
+      GoRoute(
+        path: '/profile/change-password',
+        builder: (_, __) => const ChangePasswordPage(),
+      ),
+      GoRoute(
+        path: '/profile/about',
+        builder: (_, __) => const AboutPage(),
+      ),
       GoRoute(
         path: '/notifications',
         builder: (_, __) => const NotificationsPage(),

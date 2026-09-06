@@ -321,6 +321,16 @@ class GroupsPage extends ConsumerWidget {
                                   ),
                                 );
                               }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed to create group: $e', style: const TextStyle(color: Colors.white)),
+                                    backgroundColor: Colors.red,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
                             } finally {
                               if (context.mounted) setState(() => loading = false);
                             }

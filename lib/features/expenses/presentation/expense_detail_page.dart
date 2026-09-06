@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
+import '../../../app/constants/app_constants.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
 import '../../../core/utils/error_formatter.dart';
@@ -143,10 +144,8 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
     bool isLocked = expense.isSettled;
     if (!isLocked && isGroup) {
       final balancesData = groupBalancesAsync.valueOrNull;
-      if (balancesData != null && balancesData.lastSettlement != null) {
-        // If there's any settlement created AFTER this expense was added, this expense 
-        // was factored into that settlement, so modifying it would corrupt the ledger.
-        isLocked = expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) || expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt);
+      if (balancesData != null) {
+        isLocked = balancesData.isExpensePartiallyOrFullySettled(expense);
       }
     }
 
@@ -204,6 +203,33 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (isLocked && isGroup) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_rounded, color: Color(0xFFF59E0B), size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This expense is locked because payment has already been recorded for it.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFD97706),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Category Icon
             CategoryIconHelper.buildBadge(expense.category, size: 84, iconSize: 42),
             const SizedBox(height: AppSpacing.md),
@@ -459,25 +485,48 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                               ),
                               if (split.isIncluded && split.amountOwed > 0) ...[
                                 Builder(builder: (context) {
-                                  bool isPayer = split.userId == expense.userId;
-                                  bool userSettled = false;
-                                  if (expense.isSettled) {
-                                    userSettled = true;
+                                  final isPayer = split.userId == expense.userId;
+                                  final balancesData = groupBalancesAsync.valueOrNull;
+
+                                  String statusText;
+                                  Color statusColor;
+
+                                  if (isPayer) {
+                                    statusText = 'Paid • ${DateHelpers.formatDayMonth(expense.expenseDate)}';
+                                    statusColor = const Color(0xFF10B981);
                                   } else {
-                                    final balancesData = groupBalancesAsync.valueOrNull;
-                                    if (balancesData != null) {
-                                      final isExpenseUnsettled = balancesData.unsettledExpenses.any((u) => u.id == expense.id);
-                                      if (!isExpenseUnsettled && balancesData.lastSettlement != null &&
-                                          (expense.createdAt.isBefore(balancesData.lastSettlement!.createdAt) ||
-                                              expense.createdAt.isAtSameMomentAs(balancesData.lastSettlement!.createdAt))) {
-                                        userSettled = true;
+                                    bool userSettled = false;
+                                    double? remainingAmount;
+                                    if (expense.isSettled) {
+                                      userSettled = true;
+                                    } else if (balancesData != null) {
+                                      final remainingForUser = balancesData.remainingOwedPerUserPerExpense[expense.id]?[split.userId];
+                                      if (remainingForUser != null) {
+                                        remainingAmount = remainingForUser;
+                                        userSettled = remainingForUser <= AppConstants.splitEpsilon;
+                                      } else {
+                                        userSettled = balancesData.isExpenseFullySettled(expense);
                                       }
                                     }
+
+                                    if (userSettled) {
+                                      final settlement = balancesData?.getSettlementForExpenseAndDebtor(expense.id, split.userId, expense.userId);
+                                      if (settlement != null) {
+                                        statusText = 'Settled • ${DateHelpers.formatDayMonth(settlement.createdAt)}';
+                                      } else {
+                                        statusText = 'Settled';
+                                      }
+                                      statusColor = const Color(0xFF10B981);
+                                    } else {
+                                      if (remainingAmount != null && remainingAmount > AppConstants.splitEpsilon) {
+                                        statusText = 'Pending • ${DateHelpers.formatCurrency(remainingAmount)} due';
+                                      } else {
+                                        statusText = 'Pending';
+                                      }
+                                      statusColor = const Color(0xFFF59E0B);
+                                    }
                                   }
-                                  
-                                  String statusText = isPayer ? 'Paid' : (userSettled ? 'Settled' : 'Pending');
-                                  Color statusColor = isPayer || userSettled ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
-                                  
+
                                   return Text(
                                     statusText,
                                     style: TextStyle(

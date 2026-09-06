@@ -9,8 +9,10 @@ import '../../auth/data/auth_repository.dart';
 import '../../expenses/data/expense_repository.dart';
 import '../../groups/data/group_repository.dart';
 import '../../profile/domain/profile_model.dart';
+import '../../expenses/domain/expense_model.dart';
 import '../../expenses/domain/expense_split_model.dart';
 import '../domain/settlement_model.dart';
+import '../domain/balance_calculator.dart';
 
 enum CashFlowType { expense, settlementPaid, settlementReceived }
 
@@ -110,6 +112,67 @@ class SettlementRepository {
     double amount,
     List<String> expenseIds,
   ) async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult.contains(ConnectivityResult.none)) {
+      throw Exception('Settling balances requires an active internet connection.');
+    }
+
+    // ── 1. Idempotency & Deduplication Guard ──
+    // Guard against rapid duplicate clicks/invocations:
+    // Check if an identical settlement (same group, payer, recipient, and matching amount)
+    // was created recently (within last 120 seconds).
+    try {
+      final existingRes = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.settlementsCollection,
+        queries: [
+          Query.equal('groupId', groupId),
+          Query.equal('fromUserId', fromUserId),
+          Query.equal('toUserId', toUserId),
+          Query.orderDesc('createdAt'),
+          Query.limit(5),
+        ],
+      );
+
+      final now = DateTime.now();
+      for (final doc in existingRes.rows) {
+        final docAmount = (doc.data['amount'] as num?)?.toDouble() ?? 0.0;
+        final createdAtStr = doc.data['createdAt'] as String?;
+        final docCreatedAt = createdAtStr != null ? DateTime.tryParse(createdAtStr) : null;
+
+        if ((docAmount - amount).abs() < 0.05) {
+          if (docCreatedAt != null && now.difference(docCreatedAt).inSeconds.abs() < 120) {
+            // Duplicate prevented: already settled within the last 2 minutes.
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // ── 2. Expense Settlement Status Guard ──
+    // If all referenced expenses are already settled, do not create duplicate settlement
+    if (expenseIds.isNotEmpty) {
+      try {
+        bool allAlreadySettled = true;
+        for (final expId in expenseIds) {
+          final expDoc = await _tablesDB.getRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.expensesCollection,
+            rowId: expId,
+          );
+          final isSettled = expDoc.data['isSettled'] == true;
+          if (!isSettled) {
+            allAlreadySettled = false;
+            break;
+          }
+        }
+        if (allAlreadySettled) {
+          // All referenced expenses are already marked as settled!
+          return;
+        }
+      } catch (_) {}
+    }
+
     final settlementId = ID.unique();
     final data = {
       'groupId': groupId,
@@ -120,10 +183,6 @@ class SettlementRepository {
       'createdAt': DateTime.now().toIso8601String(),
     };
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult.contains(ConnectivityResult.none)) {
-      throw Exception('Settling balances requires an active internet connection.');
-    }
     await _tablesDB.createRow(
       databaseId: AppConstants.databaseId,
       tableId: AppConstants.settlementsCollection,
@@ -131,49 +190,71 @@ class SettlementRepository {
       data: data,
     );
 
-    // Check if any of the referenced expenses are now fully settled by all debtors
-    for (final expId in expenseIds) {
-      try {
+    // Evaluate if the entire group active cycle is now fully settled (all net balances == 0)
+    try {
+      final expRes = await _tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expensesCollection,
+        queries: [
+          Query.equal('groupId', groupId),
+          Query.equal('isSettled', false),
+        ],
+      );
+      final activeExpenses = expRes.rows.map((d) => Expense.fromMap(d.dataWithId)).toList();
+
+      if (activeExpenses.isNotEmpty) {
+        final memberRows = await _tablesDB.listRows(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.groupMembersCollection,
+          queries: [Query.equal('groupId', groupId)],
+        );
+        final memberUserIds = memberRows.rows
+            .map((r) => r.data['userId'] as String)
+            .toList();
+
+        if (memberUserIds.isEmpty) return;
+
+        final activeExpIds = activeExpenses.map((e) => e.id).toList();
         final splitsRes = await _tablesDB.listRows(
           databaseId: AppConstants.databaseId,
           tableId: AppConstants.expenseSplitsCollection,
-          queries: [Query.equal('expenseId', expId)],
+          queries: [
+            Query.equal('expenseId', activeExpIds),
+          ],
         );
-        final splits = splitsRes.rows.map((d) => ExpenseSplit.fromMap(d.dataWithId)).toList();
+        final allSplits = splitsRes.rows.map((d) => ExpenseSplit.fromMap(d.dataWithId)).toList();
 
-        final expDoc = await _tablesDB.getRow(
-          databaseId: AppConstants.databaseId,
-          tableId: AppConstants.expensesCollection,
-          rowId: expId,
-        );
-        final payerUserId = expDoc.data['userId'];
-
-        final otherSplits = splits.where((s) => s.userId != payerUserId && s.isIncluded).toList();
-        final totalOwedByOthers = otherSplits.fold<double>(0.0, (sum, s) => sum + s.amountOwed);
-
-        // Find all settlements referencing this expense in the group
         final setRes = await _tablesDB.listRows(
           databaseId: AppConstants.databaseId,
           tableId: AppConstants.settlementsCollection,
           queries: [Query.equal('groupId', groupId)],
         );
-        final allGroupSettlements = setRes.rows.map((d) => Settlement.fromMap(d.dataWithId)).toList();
-        final expSettlements = allGroupSettlements.where((s) => s.settledExpenseIds.contains(expId)).toList();
-        final totalSettledAmount = expSettlements.fold<double>(0.0, (sum, s) => sum + s.amount);
+        final allSettlements = setRes.rows.map((d) => Settlement.fromMap(d.dataWithId)).toList();
 
-        if (totalSettledAmount >= totalOwedByOthers - 0.05) {
-          await _tablesDB.updateRow(
-            databaseId: AppConstants.databaseId,
-            tableId: AppConstants.expensesCollection,
-            rowId: expId,
-            data: {
-              'isSettled': true,
-              'settledAt': DateTime.now().toIso8601String(),
-            },
-          );
+        final calcResult = BalanceCalculator.calculateExpenseSplitBalances(
+          expenses: activeExpenses,
+          allSplits: allSplits,
+          settlements: allSettlements,
+          memberUserIds: memberUserIds,
+        );
+
+        if (calcResult.transactions.isEmpty &&
+            calcResult.netBalances.isNotEmpty &&
+            calcResult.netBalances.values.every((b) => b.abs() < 0.05)) {
+          for (final exp in activeExpenses) {
+            await _tablesDB.updateRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.expensesCollection,
+              rowId: exp.id,
+              data: {
+                'isSettled': true,
+                'settledAt': DateTime.now().toIso8601String(),
+              },
+            );
+          }
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
   }
 
   Future<List<Settlement>> getGroupSettlements(String groupId) async {

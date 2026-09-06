@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +11,6 @@ import '../data/profile_repository.dart';
 import '../../update/data/update_service.dart';
 import '../../update/presentation/update_dialog.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
-import '../../../shared/widgets/split_pro_logo.dart';
 
 final packageInfoProvider = FutureProvider<PackageInfo>((ref) async {
   return await PackageInfo.fromPlatform();
@@ -38,45 +39,29 @@ class ProfilePage extends ConsumerWidget {
         child: Column(
           children: [
             // Avatar
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.primary,
-                    const Color(0xFF41A5FF),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  user?.name.isNotEmpty == true
-                      ? user!.name[0].toUpperCase()
-                      : 'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+            _buildProfileAvatar(
+              context,
+              user?.name ?? '',
+              profileAsync.valueOrNull?.avatarUrl,
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(
               user?.name ?? 'User',
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
+            if (profileAsync.valueOrNull?.username != null &&
+                profileAsync.valueOrNull!.username!.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                '@${profileAsync.valueOrNull!.username!}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.xs),
             Text(
               user?.email ?? '',
@@ -99,15 +84,8 @@ class ProfilePage extends ConsumerWidget {
                     icon: Icons.person_rounded,
                     iconColor: const Color(0xFF2481E9),
                     title: 'Edit Personal Details',
-                    onTap: () {
-                      final profile = profileAsync.valueOrNull;
-                      _showEditProfile(
-                        context,
-                        ref,
-                        user?.name ?? '',
-                        profile?.upiId ?? '',
-                      );
-                    },
+                    subtitle: 'Name, username, UPI & photo',
+                    onTap: () => context.push('/profile/edit'),
                   ),
                   const Divider(height: 1, indent: 56),
 
@@ -134,7 +112,8 @@ class ProfilePage extends ConsumerWidget {
                     icon: Icons.lock_rounded,
                     iconColor: const Color(0xFFF59E0B),
                     title: 'Change Password',
-                    onTap: () => _showChangePassword(context, ref),
+                    subtitle: 'Password security & recovery',
+                    onTap: () => context.push('/profile/change-password'),
                   ),
                   const Divider(height: 1, indent: 56),
                   _SettingsTile(
@@ -147,8 +126,9 @@ class ProfilePage extends ConsumerWidget {
                   _SettingsTile(
                     icon: Icons.info_rounded,
                     iconColor: const Color(0xFF06B6D4),
-                    title: 'About',
-                    onTap: () => _showAboutDialog(context),
+                    title: 'About Split Pro',
+                    subtitle: 'Terms, features & app info',
+                    onTap: () => context.push('/profile/about'),
                   ),
                 ],
               ),
@@ -227,53 +207,7 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  void _showAboutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            SplitProLogo(size: 32),
-            SizedBox(width: 12),
-            Text('About Split Pro'),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Split Pro is your ultimate companion for personal and group financial tracking.',
-              style: TextStyle(height: 1.4),
-            ),
-            SizedBox(height: AppSpacing.md),
-            Text(
-              'Features:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: AppSpacing.xs),
-            Text('• Track personal and group expenses\n• Settle bills with friends unequally or equally\n• View analytics and expense summaries\n• Sync automatically in real time'),
-          ],
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                minimumSize: const Size(0, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   void _showBudgetEditor(
     BuildContext context,
@@ -359,214 +293,96 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  void _showEditProfile(
+  Widget _buildProfileAvatar(
     BuildContext context,
-    WidgetRef ref,
-    String currentName,
-    String currentUpiId,
+    String name,
+    String? avatarUrl,
   ) {
-    final nameCtrl = TextEditingController(text: currentName);
-    final upiCtrl = TextEditingController(text: currentUpiId);
-    bool loading = false;
-    String? upiError;
+    final initial =
+        name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : 'U';
 
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Edit Personal Details'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Full Name'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: upiCtrl,
-                decoration: InputDecoration(
-                  labelText: 'UPI ID (VPA)',
-                  hintText: 'e.g. john@okaxis',
-                  errorText: upiError,
-                ),
-              ),
-            ],
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.textPrimary,
-                      foregroundColor: AppColors.surface,
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: loading
-                        ? null
-                        : () async {
-                            if (nameCtrl.text.trim().isEmpty) return;
-                            final upi = upiCtrl.text.trim();
-                            if (upi.isNotEmpty) {
-                              final upiRegex = RegExp(r'^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$');
-                              if (!upiRegex.hasMatch(upi)) {
-                                setState(() => upiError = 'Invalid UPI ID format');
-                                return;
-                              }
-                            }
-                            
-                            setState(() {
-                              loading = true;
-                              upiError = null;
-                            });
-                            try {
-                              // Update Name
-                              await ref
-                                  .read(authStateProvider.notifier)
-                                  .updateName(nameCtrl.text.trim());
-                              
-                              // Update UPI ID in Profile
-                              final profile = ref.read(currentProfileProvider).valueOrNull;
-                              if (profile != null) {
-                                final updated = profile.copyWith(upiId: upi.isEmpty ? null : upi);
-                                await ref
-                                    .read(profileRepositoryProvider)
-                                    .updateProfile(updated);
-                              }
-                              
-                              ref.invalidate(currentProfileProvider);
-                              if (context.mounted) Navigator.pop(context);
-                            } catch (e) {
-                              // Handle error
-                            } finally {
-                              if (context.mounted) setState(() => loading = false);
-                            }
-                          },
-                    child: loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
+    if (avatarUrl != null && avatarUrl.startsWith('avatar:')) {
+      final emoji = avatarUrl.replaceFirst('avatar:', '');
+      return Container(
+        width: 84,
+        height: 84,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.surfaceVariant,
+          border: Border.all(color: AppColors.primary, width: 2.5),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.25),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-      ),
-    );
+        child: Center(
+          child: Text(emoji, style: const TextStyle(fontSize: 42)),
+        ),
+      );
+    }
+
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      if (avatarUrl.startsWith('http')) {
+        return ClipOval(
+          child: Image.network(
+            avatarUrl,
+            width: 84,
+            height: 84,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildInitialAvatar(initial),
+          ),
+        );
+      } else if (!kIsWeb) {
+        final file = File(avatarUrl);
+        if (file.existsSync()) {
+          return ClipOval(
+            child: Image.file(
+              file,
+              width: 84,
+              height: 84,
+              fit: BoxFit.cover,
+            ),
+          );
+        }
+      }
+    }
+
+    return _buildInitialAvatar(initial);
   }
 
-  void _showChangePassword(BuildContext context, WidgetRef ref) {
-    final oldCtrl = TextEditingController();
-    final newCtrl = TextEditingController();
-    bool loading = false;
-    String? error;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Change Password'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (error != null) ...[
-                Text(error!, style: TextStyle(color: AppColors.error)),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              TextField(
-                controller: oldCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Current password',
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: newCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'New password'),
-              ),
-            ],
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.onPrimary,
-                      minimumSize: const Size(0, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: loading
-                        ? null
-                        : () async {
-                            if (oldCtrl.text.isEmpty || newCtrl.text.isEmpty) return;
-      
-                            setState(() {
-                              loading = true;
-                              error = null;
-                            });
-                            try {
-                              await ref
-                                  .read(authRepositoryProvider)
-                                  .changePassword(
-                                    oldPassword: oldCtrl.text,
-                                    newPassword: newCtrl.text,
-                                  );
-                              if (context.mounted) Navigator.pop(context);
-                            } catch (e) {
-                              setState(
-                                () => error =
-                                    'Failed to change password. Check current password.',
-                              );
-                            } finally {
-                              if (context.mounted) setState(() => loading = false);
-                            }
-                          },
-                    child: loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Update', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
+  Widget _buildInitialAvatar(String initial) {
+    return Container(
+      width: 84,
+      height: 84,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary,
+            const Color(0xFF41A5FF),
           ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 34,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );

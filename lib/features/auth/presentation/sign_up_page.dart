@@ -9,6 +9,9 @@ import '../../../core/utils/throttler.dart';
 import '../../profile/domain/profile_model.dart';
 import '../data/auth_repository.dart';
 import '../../../shared/widgets/split_pro_logo.dart';
+import 'package:appwrite/appwrite.dart';
+import '../../../app/constants/app_constants.dart';
+import '../../../core/appwrite_client.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
   const SignUpPage({super.key});
@@ -51,6 +54,22 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
       final username = _usernameCtrl.text.trim().toLowerCase();
       final email = _emailCtrl.text.trim();
       
+      // Check if username is taken
+      final tablesDB = ref.read(appwriteTablesDBProvider);
+      final res = await tablesDB.listRows(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        queries: [Query.equal('username', username)],
+      );
+      
+      if (res.rows.isNotEmpty) {
+        setState(() {
+          _error = 'Username is already taken. Please choose another.';
+          _loading = false;
+        });
+        return;
+      }
+
       final uid = await ref
           .read(authStateProvider.notifier)
           .signUpCreate(

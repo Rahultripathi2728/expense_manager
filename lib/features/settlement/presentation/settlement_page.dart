@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/utils/haptic_helper.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
@@ -45,6 +46,8 @@ final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
       transactions: [],
       profiles: {},
       unsettledExpenses: [],
+      splitsByExpense: {},
+      remainingOwedPerUserPerExpense: {},
     );
   }
 
@@ -68,13 +71,10 @@ final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
       ? settlements.first
       : null;
 
-  // Active (non-archived) expenses
-  final activeExpenses = allExpenses.where((e) => !e.isSettled).toList();
-
-  // 3. Fetch splits for active expenses
+  // 3. Fetch splits for all expenses
   final List<ExpenseSplit> allSplits = [];
   final Map<String, List<ExpenseSplit>> splitsByExpense = {};
-  for (final exp in activeExpenses) {
+  for (final exp in allExpenses) {
     try {
       final splits = await repo.getExpenseSplits(exp.id);
       splitsByExpense[exp.id] = splits;
@@ -84,9 +84,9 @@ final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
     }
   }
 
-  // 4. Calculate accurate per-expense split balances
+  // 4. Calculate accurate per-expense split balances using cumulative ledger
   final calcResult = BalanceCalculator.calculateExpenseSplitBalances(
-    expenses: activeExpenses,
+    expenses: allExpenses,
     allSplits: allSplits,
     settlements: settlements,
     memberUserIds: userIds,
@@ -107,6 +107,8 @@ final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
     lastSettlement: lastSettlement,
     unsettledExpenses: calcResult.unsettledExpenses,
     splitsByExpense: splitsByExpense,
+    remainingOwedPerUserPerExpense: calcResult.remainingOwedPerUserPerExpense,
+    settlements: settlements,
   );
 });
 
@@ -136,6 +138,8 @@ class GroupBalanceData {
   final Settlement? lastSettlement;
   final List<Expense> unsettledExpenses;
   final Map<String, List<ExpenseSplit>> splitsByExpense;
+  final Map<String, Map<String, double>> remainingOwedPerUserPerExpense;
+  final List<Settlement> settlements;
 
   GroupBalanceData({
     required this.membersCount,
@@ -148,8 +152,48 @@ class GroupBalanceData {
     required this.profiles,
     this.lastSettlement,
     required this.unsettledExpenses,
-    this.splitsByExpense = const {},
+    required this.splitsByExpense,
+    required this.remainingOwedPerUserPerExpense,
+    this.settlements = const [],
   });
+
+  /// An expense is ONLY fully settled when marked settled in DB or ALL included split members have 0 remaining debt.
+  bool isExpenseFullySettled(Expense expense) {
+    if (expense.isSettled) return true;
+    final remainingMap = remainingOwedPerUserPerExpense[expense.id];
+    if (remainingMap == null || remainingMap.isEmpty) return false;
+    return remainingMap.values.every((val) => val <= AppConstants.splitEpsilon);
+  }
+
+  /// Whether ANY member has paid their share against this expense (partial or full).
+  /// If true, this expense is locked and cannot be deleted or edited!
+  bool isExpensePartiallyOrFullySettled(Expense expense) {
+    if (expense.isSettled) return true;
+    if (settlements.any((s) => s.settledExpenseIds.contains(expense.id))) return true;
+    final remainingMap = remainingOwedPerUserPerExpense[expense.id];
+    if (remainingMap != null) {
+      final splits = splitsByExpense[expense.id] ?? [];
+      for (final s in splits) {
+        if (s.userId != expense.userId && s.isIncluded) {
+          final rem = remainingMap[s.userId] ?? s.amountOwed;
+          if (rem < s.amountOwed - AppConstants.splitEpsilon) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Get the settlement recorded specifically for a debtor paying the payer for an expense
+  Settlement? getSettlementForExpenseAndDebtor(String expenseId, String debtorId, String payerId) {
+    for (final s in settlements) {
+      if (s.fromUserId == debtorId && s.toUserId == payerId && s.settledExpenseIds.contains(expenseId)) {
+        return s;
+      }
+    }
+    return null;
+  }
 
   List<Expense> getPaidExpenses(String userId) {
     return unsettledExpenses.where((e) => e.userId == userId).toList();
@@ -184,6 +228,16 @@ class GroupBalanceData {
       }
     }
     return shares;
+  }
+
+  List<Settlement> getSettlementsPaid(String userId) {
+    final activeExpIds = unsettledExpenses.map((e) => e.id).toSet();
+    return settlements.where((s) => s.fromUserId == userId && s.settledExpenseIds.any((id) => activeExpIds.contains(id))).toList();
+  }
+
+  List<Settlement> getSettlementsReceived(String userId) {
+    final activeExpIds = unsettledExpenses.map((e) => e.id).toSet();
+    return settlements.where((s) => s.toUserId == userId && s.settledExpenseIds.any((id) => activeExpIds.contains(id))).toList();
   }
 }
 
@@ -228,26 +282,75 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
     }
   }
 
+  Future<void> _payViaUPI(SimplifiedTransaction tx, Profile? recipient, List<String> expIds) async {
+    final toName = recipient?.fullName ?? 'Member';
+    final upiId = recipient?.upiId ?? '';
+
+    if (upiId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$toName has not set a UPI ID yet. Please ask them to add it in Profile settings.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.parse(
+      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(toName)}&am=${tx.amount.toStringAsFixed(2)}&cu=INR&tn=Settlement%20via%20SplitPro',
+    );
+
+    _pendingTransaction = tx;
+    _pendingExpIds = expIds;
+
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open UPI payment app. Please make payment manually.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No UPI application found on device.')),
+        );
+      }
+    }
+  }
+
   Future<void> _performSettlement(SimplifiedTransaction tx, List<String> expIds) async {
+    if (settling) return;
     setState(() => settling = true);
     try {
       final repo = ref.read(settlementRepositoryProvider);
+      await repo.settleBalancesLocalFallback(
+        selectedGroupId!,
+        tx.fromUserId,
+        tx.toUserId,
+        tx.amount,
+        expIds,
+      );
+
+      // In-app notification to recipient
       try {
-        await repo.settleBalances(
-          selectedGroupId!,
-          tx.fromUserId,
-          tx.toUserId,
-          tx.amount,
+        final currentUser = ref.read(authStateProvider).valueOrNull;
+        final payerName = currentUser?.name.isNotEmpty == true ? currentUser!.name : 'Group Member';
+        final tablesDB = ref.read(appwriteTablesDBProvider);
+        await tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.notificationsCollection,
+          rowId: ID.unique(),
+          data: {
+            'userId': tx.toUserId,
+            'title': '💰 Payment Received & Settled',
+            'body': '$payerName marked ₹${tx.amount.toStringAsFixed(0)} as paid and settled with you.',
+            'type': 'settled',
+            'isRead': false,
+            'createdAt': DateTime.now().toIso8601String(),
+          },
         );
-      } catch (_) {
-        await repo.settleBalancesLocalFallback(
-          selectedGroupId!,
-          tx.fromUserId,
-          tx.toUserId,
-          tx.amount,
-          expIds,
-        );
-      }
+      } catch (_) {}
 
       ref.invalidate(groupBalancesProvider(selectedGroupId!));
       ref.invalidate(monthlyExpensesProvider);
@@ -255,9 +358,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
       if (mounted) {
         HapticHelper.mediumTap();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Balances Settled!'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text('Settled ₹${tx.amount.toStringAsFixed(0)} successfully!'),
+            backgroundColor: const Color(0xFF10B981),
           ),
         );
       }
@@ -362,13 +465,15 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                 ),
               ),
-              onPressed: () {
-                _pendingTransaction = null;
-                _pendingExpIds = null;
-                _showingConfirmationDialog = false;
-                Navigator.pop(ctx);
-                _performSettlement(tx, expIds);
-              },
+              onPressed: settling
+                  ? null
+                  : () {
+                      _pendingTransaction = null;
+                      _pendingExpIds = null;
+                      _showingConfirmationDialog = false;
+                      Navigator.pop(ctx);
+                      _performSettlement(tx, expIds);
+                    },
               child: const Text(
                 'Yes, Settle',
                 style: TextStyle(fontWeight: FontWeight.bold),
@@ -711,6 +816,10 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                             data.shareAmounts[uId] ?? 0.0;
                                         final paidExps = data.getPaidExpenses(uId);
                                         final sharedExps = data.getSharedExpenses(uId);
+                                        final setsPaid = data.getSettlementsPaid(uId);
+                                        final setsRecv = data.getSettlementsReceived(uId);
+                                        final totalSetsPaid = setsPaid.fold<double>(0.0, (sum, s) => sum + s.amount);
+                                        final totalSetsRecv = setsRecv.fold<double>(0.0, (sum, s) => sum + s.amount);
 
                                         final isSettled = net.abs() < 0.05;
                                         final isGetsBack = net > 0.05;
@@ -796,7 +905,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                                   ),
                                                 ),
                                                 subtitle: Text(
-                                                  'Paid ${DateHelpers.formatCurrency(paid)} • Share ${DateHelpers.formatCurrency(share)}',
+                                                  totalSetsPaid > 0
+                                                      ? 'Paid ${DateHelpers.formatCurrency(paid)} (+${DateHelpers.formatCurrency(totalSetsPaid)} Settled) • Share ${DateHelpers.formatCurrency(share)}'
+                                                      : 'Paid ${DateHelpers.formatCurrency(paid)} • Share ${DateHelpers.formatCurrency(share)}',
                                                   style: TextStyle(
                                                     color: AppColors.textSecondary,
                                                     fontSize: 12,
@@ -834,54 +945,134 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                                   const SizedBox(height: 10),
 
                                                   // ── Calculation / Hisaab Summary Box ──
-                                                  Container(
-                                                    padding: const EdgeInsets.all(12),
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors.surfaceVariant.withValues(alpha: 0.4),
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      border: Border.all(color: AppColors.borderLight),
-                                                    ),
-                                                    child: Column(
+                                                   Container(
+                                                     padding: const EdgeInsets.all(12),
+                                                     decoration: BoxDecoration(
+                                                       color: AppColors.surfaceVariant.withValues(alpha: 0.4),
+                                                       borderRadius: BorderRadius.circular(12),
+                                                       border: Border.all(color: AppColors.borderLight),
+                                                     ),
+                                                     child: Column(
+                                                       children: [
+                                                         if (isSettled && paid == 0 && share == 0 && totalSetsPaid == 0) ...[
+                                                           Row(
+                                                             children: [
+                                                               const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF10B981), size: 16),
+                                                               const SizedBox(width: 8),
+                                                               Expanded(
+                                                                 child: Text(
+                                                                   'All bills are fully settled! No pending shares or dues.',
+                                                                   style: TextStyle(
+                                                                     fontSize: 12,
+                                                                     fontWeight: FontWeight.w600,
+                                                                     color: AppColors.textPrimary,
+                                                                   ),
+                                                                 ),
+                                                               ),
+                                                             ],
+                                                           ),
+                                                         ] else ...[
+                                                           Row(
+                                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                             children: [
+                                                               Text('Bills Paid:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                                               Text(
+                                                                 DateHelpers.formatCurrency(paid),
+                                                                 style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                                               ),
+                                                             ],
+                                                           ),
+                                                           if (totalSetsPaid > 0) ...[
+                                                             const SizedBox(height: 4),
+                                                             Row(
+                                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                               children: [
+                                                                 Text('Settlements Paid (Cash):', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                                                 Text(
+                                                                   '+ ${DateHelpers.formatCurrency(totalSetsPaid)}',
+                                                                   style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                                                 ),
+                                                               ],
+                                                             ),
+                                                           ],
+                                                           const SizedBox(height: 4),
+                                                           Row(
+                                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                             children: [
+                                                               Text('Share in Bills:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                                               Text(
+                                                                 '- ${DateHelpers.formatCurrency(share)}',
+                                                                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.error),
+                                                               ),
+                                                             ],
+                                                           ),
+                                                           if (totalSetsRecv > 0) ...[
+                                                             const SizedBox(height: 4),
+                                                             Row(
+                                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                               children: [
+                                                                 Text('Settlements Received:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                                                 Text(
+                                                                   '- ${DateHelpers.formatCurrency(totalSetsRecv)}',
+                                                                   style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF3B82F6)),
+                                                                 ),
+                                                               ],
+                                                             ),
+                                                           ],
+                                                           const Divider(height: 10),
+                                                           Row(
+                                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                             children: [
+                                                               Text('Net Balance:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                                               Text(
+                                                                 badgeText,
+                                                                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: badgeColor),
+                                                               ),
+                                                             ],
+                                                           ),
+                                                         ],
+                                                       ],
+                                                     ),
+                                                   ),
+                                                  const SizedBox(height: 12),
+
+                                                  // ── Settlements Paid by Member ──
+                                                  if (setsPaid.isNotEmpty) ...[
+                                                    Row(
                                                       children: [
-                                                        Row(
-                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                          children: [
-                                                            Text('Total Bills Paid:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                                                            Text(
-                                                              DateHelpers.formatCurrency(paid),
-                                                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        const SizedBox(height: 4),
-                                                        Row(
-                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                          children: [
-                                                            Text('Total Share (Consumed):', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                                                            Text(
-                                                              DateHelpers.formatCurrency(share),
-                                                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.error),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        const Divider(height: 12),
-                                                        Row(
-                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                          children: [
-                                                            Text(
-                                                              'Net Balance (${paid.toStringAsFixed(0)} - ${share.toStringAsFixed(0)}):',
-                                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                                                            ),
-                                                            Text(
-                                                              badgeText,
-                                                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: badgeColor),
-                                                            ),
-                                                          ],
+                                                        const Icon(Icons.check_circle_rounded, size: 15, color: Color(0xFF10B981)),
+                                                        const SizedBox(width: 5),
+                                                        Text(
+                                                          'Settlements Paid by ${p.fullName.split(' ').first} (${setsPaid.length})',
+                                                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                                                         ),
                                                       ],
                                                     ),
-                                                  ),
-                                                  const SizedBox(height: 12),
+                                                    const SizedBox(height: 5),
+                                                    ...setsPaid.map((s) {
+                                                      final toName = data.profiles[s.toUserId]?.fullName ?? 'Member';
+                                                      return Padding(
+                                                        padding: const EdgeInsets.symmetric(vertical: 2.5, horizontal: 4),
+                                                        child: Row(
+                                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                          children: [
+                                                            Expanded(
+                                                              child: Text(
+                                                                '• Paid to ${toName.split(' ').first} (${DateHelpers.formatDayMonth(s.createdAt)})',
+                                                                style: TextStyle(fontSize: 12, color: AppColors.textPrimary),
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                            ),
+                                                            Text(
+                                                              DateHelpers.formatCurrency(s.amount),
+                                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      );
+                                                    }),
+                                                    const SizedBox(height: 10),
+                                                  ],
 
                                                   // ── Bills Paid by Member ──
                                                   Row(
@@ -1072,12 +1263,14 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                               data
                                                   .profiles[tx.fromUserId]
                                                   ?.fullName ??
-                                              'User';
+                                                      'User';
                                           final toName =
                                               data
                                                   .profiles[tx.toUserId]
                                                   ?.fullName ??
                                               'User';
+                                          final isMyDebt = user?.id == tx.fromUserId;
+                                          final isMyCredit = user?.id == tx.toUserId;
 
                                           return Container(
                                             padding: const EdgeInsets.all(12),
@@ -1089,71 +1282,197 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                               border: Border.all(
-                                                color: AppColors.borderLight,
+                                                color: isMyDebt
+                                                    ? const Color(0xFFEF4444).withValues(alpha: 0.3)
+                                                    : (isMyCredit
+                                                        ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                                                        : AppColors.borderLight),
                                               ),
                                             ),
-                                            child: Row(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Icon(
-                                                  Icons.arrow_forward,
-                                                  color: AppColors.textSecondary,
-                                                  size: 16,
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: RichText(
-                                                    text: TextSpan(
-                                                      style: TextStyle(
-                                                        color: AppColors.textPrimary,
-                                                        fontSize: 14,
-                                                      ),
-                                                      children: [
-                                                        TextSpan(
-                                                          text: fromName
-                                                              .split(' ')
-                                                              .first,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                        ),
-                                                        const TextSpan(
-                                                          text: ' pays ',
-                                                        ),
-                                                        TextSpan(
-                                                          text: toName
-                                                              .split(' ')
-                                                              .first,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                        ),
-                                                        const TextSpan(
-                                                          text: ' ',
-                                                        ),
-                                                        TextSpan(
-                                                          text:
-                                                              DateHelpers.formatCurrency(
-                                                                tx.amount,
-                                                              ),
-                                                          style:
-                                                              const TextStyle(
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                                color: Colors
-                                                                    .black,
-                                                              ),
-                                                        ),
-                                                      ],
+                                                Row(
+                                                  children: [
+                                                    Icon(
+                                                      isMyDebt
+                                                          ? Icons.arrow_circle_up_rounded
+                                                          : (isMyCredit
+                                                              ? Icons.arrow_circle_down_rounded
+                                                              : Icons.arrow_forward),
+                                                      color: isMyDebt
+                                                          ? const Color(0xFFEF4444)
+                                                          : (isMyCredit
+                                                              ? const Color(0xFF10B981)
+                                                              : AppColors.textSecondary),
+                                                      size: 18,
                                                     ),
-                                                  ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: RichText(
+                                                        text: TextSpan(
+                                                          style: TextStyle(
+                                                            color: AppColors.textPrimary,
+                                                            fontSize: 14,
+                                                          ),
+                                                          children: [
+                                                            TextSpan(
+                                                              text: fromName
+                                                                  .split(' ')
+                                                                  .first,
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                  ),
+                                                            ),
+                                                            const TextSpan(
+                                                              text: ' pays ',
+                                                            ),
+                                                            TextSpan(
+                                                              text: toName
+                                                                  .split(' ')
+                                                                  .first,
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                  ),
+                                                            ),
+                                                            const TextSpan(
+                                                              text: ' ',
+                                                            ),
+                                                            TextSpan(
+                                                              text:
+                                                                  DateHelpers.formatCurrency(
+                                                                    tx.amount,
+                                                                  ),
+                                                              style:
+                                                                  TextStyle(
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    color: isMyDebt
+                                                                        ? const Color(0xFFEF4444)
+                                                                        : (isMyCredit
+                                                                            ? const Color(0xFF10B981)
+                                                                            : Colors.black),
+                                                                  ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (isMyDebt)
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: const Text(
+                                                          'You Owe',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFFEF4444),
+                                                          ),
+                                                        ),
+                                                      )
+                                                    else if (isMyCredit)
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: const Text(
+                                                          'You Receive',
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF10B981),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
                                                 ),
+                                                if (isMyDebt) ...[
+                                                  const SizedBox(height: 10),
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: OutlinedButton.icon(
+                                                          onPressed: settling
+                                                              ? null
+                                                              : () {
+                                                                  final toProfile = data.profiles[tx.toUserId];
+                                                                  final expIds = data.unsettledExpenses
+                                                                      .where((e) => e.userId == tx.toUserId)
+                                                                      .map((e) => e.id)
+                                                                      .toList();
+                                                                  _payViaUPI(tx, toProfile, expIds);
+                                                                },
+                                                          icon: const Icon(Icons.payment_rounded, size: 14),
+                                                          label: const Text(
+                                                            'Pay UPI',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                          style: OutlinedButton.styleFrom(
+                                                            foregroundColor: AppColors.primary,
+                                                            side: BorderSide(color: AppColors.primary),
+                                                            shape: RoundedRectangleBorder(
+                                                              borderRadius: BorderRadius.circular(8),
+                                                            ),
+                                                            padding: const EdgeInsets.symmetric(vertical: 6),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: ElevatedButton.icon(
+                                                          onPressed: settling
+                                                              ? null
+                                                              : () {
+                                                                  final expIds = data.unsettledExpenses
+                                                                      .where((e) => e.userId == tx.toUserId)
+                                                                      .map((e) => e.id)
+                                                                      .toList();
+                                                                  _performSettlement(tx, expIds);
+                                                                },
+                                                          icon: const Icon(Icons.check_rounded, size: 14),
+                                                          label: const Text(
+                                                            'Settle',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor: const Color(0xFF10B981),
+                                                            foregroundColor: Colors.white,
+                                                            shape: RoundedRectangleBorder(
+                                                              borderRadius: BorderRadius.circular(8),
+                                                            ),
+                                                            padding: const EdgeInsets.symmetric(vertical: 6),
+                                                            elevation: 0,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                           );

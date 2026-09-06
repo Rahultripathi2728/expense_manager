@@ -122,6 +122,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
   final String? _groupId;
 
   Expense? _existingExpense;
+  DateTime? _pendingDate;
 
   AddExpenseNotifier(this._ref, this._groupId) : super(AddExpenseState()) {
     _initMembers();
@@ -186,7 +187,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
             final initialBill = SingleBillState(
               selectedMemberIds: [user.id],
               unequalAmounts: {user.id: 0.0},
-              date: DateTime.now(),
+              date: _pendingDate ?? DateTime.now(),
             );
             state = state.copyWith(
               allMemberIds: [user.id],
@@ -198,7 +199,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
               return b.copyWith(
                 selectedMemberIds: b.selectedMemberIds.isEmpty ? [user.id] : b.selectedMemberIds,
                 unequalAmounts: b.unequalAmounts.isEmpty ? {user.id: 0.0} : b.unequalAmounts,
-                date: b.date ?? DateTime.now(),
+                date: b.date ?? _pendingDate ?? DateTime.now(),
               );
             }).toList();
             state = state.copyWith(allMemberIds: [user.id], bills: updatedBills);
@@ -215,7 +216,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
           final initialBill = SingleBillState(
             selectedMemberIds: ids,
             unequalAmounts: {for (var id in ids) id: 0.0},
-            date: DateTime.now(),
+            date: _pendingDate ?? DateTime.now(),
           );
           state = state.copyWith(
             allMemberIds: ids,
@@ -227,7 +228,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
             return b.copyWith(
               selectedMemberIds: b.selectedMemberIds.isEmpty ? ids : b.selectedMemberIds,
               unequalAmounts: b.unequalAmounts.isEmpty ? {for (var id in ids) id: 0.0} : b.unequalAmounts,
-              date: b.date ?? DateTime.now(),
+              date: b.date ?? _pendingDate ?? DateTime.now(),
             );
           }).toList();
           state = state.copyWith(allMemberIds: ids, bills: updatedBills);
@@ -272,6 +273,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
   }
 
   void updateDate(DateTime date) {
+    _pendingDate = date;
     updateActiveBill((b) => b.copyWith(date: date));
   }
 

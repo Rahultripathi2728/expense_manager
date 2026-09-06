@@ -372,8 +372,8 @@ class _SettlementHistoryPageState extends ConsumerState<SettlementHistoryPage> {
                                       border: Border.all(color: AppColors.borderLight),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.02),
-                                          blurRadius: 6,
+                                          color: Colors.black.withValues(alpha: 0.03),
+                                          blurRadius: 8,
                                           offset: const Offset(0, 2),
                                         ),
                                       ],
@@ -381,110 +381,219 @@ class _SettlementHistoryPageState extends ConsumerState<SettlementHistoryPage> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
+                                        // Top Row: Date & Status Chip
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
                                             Row(
                                               children: [
-                                                Container(
-                                                  padding: const EdgeInsets.all(6),
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                                                    borderRadius: BorderRadius.circular(8),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.check_circle_rounded,
-                                                    size: 16,
-                                                    color: Color(0xFF10B981),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
+                                                Icon(Icons.calendar_today_rounded, size: 12.5, color: AppColors.textTertiary),
+                                                const SizedBox(width: 5),
                                                 Text(
-                                                  DateHelpers.formatFullDate(settlement.createdAt),
+                                                  '${DateHelpers.formatFullDate(settlement.createdAt)} • ${DateHelpers.formatTime(settlement.createdAt)}',
                                                   style: TextStyle(
                                                     color: AppColors.textSecondary,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                            Text(
-                                              DateHelpers.formatCurrency(settlement.amount),
-                                              style: const TextStyle(
-                                                color: Color(0xFF10B981),
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 16,
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF10B981)),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'Settled',
+                                                    style: TextStyle(
+                                                      fontSize: 10.5,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Color(0xFF047857),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 10),
+                                        const SizedBox(height: 12),
+
+                                        // Middle Row: Payer -> Amount Pill -> Receiver
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                           decoration: BoxDecoration(
-                                            color: AppColors.surfaceVariant.withValues(alpha: 0.6),
-                                            borderRadius: BorderRadius.circular(10),
+                                            color: AppColors.surfaceVariant.withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: AppColors.borderLight.withValues(alpha: 0.6)),
                                           ),
                                           child: Row(
                                             children: [
-                                              Flexible(
+                                              // Payer
+                                              CircleAvatar(
+                                                radius: 16,
+                                                backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                                                 child: Text(
-                                                  fromName,
-                                                  style: const TextStyle(
+                                                  fromName.isNotEmpty ? fromName[0].toUpperCase() : 'P',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
                                                     fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
+                                                    color: AppColors.primary,
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      fromName,
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 13,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    const SizedBox(height: 1),
+                                                    const Text(
+                                                      'Payer',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Color(0xFFEF4444),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+
+                                              // Green Amount Transfer Pill
                                               Padding(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                child: Icon(
-                                                  Icons.arrow_forward_rounded,
-                                                  size: 14,
-                                                  color: AppColors.primary,
+                                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors.surface,
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: Colors.black.withValues(alpha: 0.02),
+                                                        blurRadius: 4,
+                                                        offset: const Offset(0, 1),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.arrow_forward_rounded,
+                                                        size: 13,
+                                                        color: Color(0xFF10B981),
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        DateHelpers.formatCurrency(settlement.amount),
+                                                        style: const TextStyle(
+                                                          fontSize: 13.5,
+                                                          fontWeight: FontWeight.w800,
+                                                          color: Color(0xFF10B981),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
-                                              Flexible(
+
+                                              // Receiver
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      toName,
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 13,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      textAlign: TextAlign.end,
+                                                    ),
+                                                    const SizedBox(height: 1),
+                                                    const Text(
+                                                      'Receiver',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: Color(0xFF10B981),
+                                                      ),
+                                                      textAlign: TextAlign.end,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              CircleAvatar(
+                                                radius: 16,
+                                                backgroundColor: const Color(0xFF10B981).withValues(alpha: 0.12),
                                                 child: Text(
-                                                  toName,
+                                                  toName.isNotEmpty ? toName[0].toUpperCase() : 'R',
                                                   style: const TextStyle(
+                                                    fontSize: 12,
                                                     fontWeight: FontWeight.bold,
-                                                    fontSize: 13,
+                                                    color: Color(0xFF10B981),
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                        const SizedBox(height: 8),
+                                        const SizedBox(height: 10),
+
+                                        // Bottom Footer: Bills Count & View Breakdown Link
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            Text(
-                                              '${settlement.settledExpenseIds.length} ${settlement.settledExpenseIds.length == 1 ? 'bill' : 'bills'} settled',
-                                              style: TextStyle(
-                                                color: AppColors.textTertiary,
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w500,
-                                              ),
+                                            Row(
+                                              children: [
+                                                Icon(Icons.receipt_outlined, size: 13, color: AppColors.textTertiary),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '${settlement.settledExpenseIds.length} ${settlement.settledExpenseIds.length == 1 ? 'bill' : 'bills'} settled',
+                                                  style: TextStyle(
+                                                    color: AppColors.textTertiary,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                             Row(
                                               children: [
                                                 Text(
-                                                  'View Details',
+                                                  'View Breakdown',
                                                   style: TextStyle(
                                                     color: AppColors.primary,
-                                                    fontSize: 11,
+                                                    fontSize: 11.5,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                                 const SizedBox(width: 2),
                                                 Icon(
                                                   Icons.chevron_right_rounded,
-                                                  size: 14,
+                                                  size: 15,
                                                   color: AppColors.primary,
                                                 ),
                                               ],

@@ -22,6 +22,9 @@ final calendarMonthProvider = StateProvider<DateTime>((ref) {
   return DateTime(now.year, now.month, 1);
 });
 
+/// Provider for selected date in calendar view.
+final selectedDateProvider = StateProvider<DateTime>((ref) => DateTime.now());
+
 class DailySummary {
   final double total;
   final double userShare;
@@ -92,12 +95,9 @@ class CalendarPage extends ConsumerStatefulWidget {
 }
 
 class _CalendarPageState extends ConsumerState<CalendarPage> {
-  DateTime _selectedDate = DateTime.now();
-
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateTime.now();
   }
 
   Widget _buildLegendItem(Color color, String label) {
@@ -127,8 +127,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     if (!isSettled && expense.isGroup && expense.groupId != null) {
       final b = groupBalancesMap[expense.groupId];
       if (b != null) {
-        final isStillUnsettled = b.unsettledExpenses.any((e) => e.id == expense.id);
-        isSettled = !isStillUnsettled;
+        isSettled = b.isExpenseFullySettled(expense);
       }
     }
 
@@ -188,6 +187,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   Widget build(BuildContext context) {
     ref.watch(themeProvider);
     final currentMonth = ref.watch(calendarMonthProvider);
+    final selectedDate = ref.watch(selectedDateProvider);
     final today = DateTime.now();
 
     final daysInMonth = DateHelpers.daysInMonth(currentMonth);
@@ -218,7 +218,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
         strokeWidth: 3,
         onRefresh: () async {
           ref.invalidate(monthlyExpensesProvider(currentMonth));
-          ref.invalidate(dailySummaryProvider(_selectedDate));
+          ref.invalidate(dailySummaryProvider(ref.read(selectedDateProvider)));
           await Future.delayed(const Duration(milliseconds: 600));
         },
         child: SingleChildScrollView(
@@ -299,7 +299,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   onTap: () {
                                     HapticHelper.lightTap();
                                     ref.read(calendarMonthProvider.notifier).state = DateTime(today.year, today.month, 1);
-                                    setState(() => _selectedDate = DateTime.now());
+                                    ref.read(selectedDateProvider.notifier).state = DateTime.now();
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -425,7 +425,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   );
                                   final isSelected = DateHelpers.isSameDay(
                                     cellDate,
-                                    _selectedDate,
+                                    selectedDate,
                                   );
                                   final dayExpenses = expenses
                                       .where(
@@ -447,7 +447,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                                   return GestureDetector(
                                     onTap: () {
                                       HapticHelper.lightTap();
-                                      setState(() => _selectedDate = cellDate);
+                                      ref.read(selectedDateProvider.notifier).state = cellDate;
                                       if (!isCurrentMonthDay) {
                                         ref
                                             .read(
@@ -609,7 +609,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              DateFormat('EEEE').format(_selectedDate),
+                              DateFormat('EEEE').format(selectedDate),
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
@@ -617,7 +617,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               ),
                             ),
                             Text(
-                              DateFormat('dd MMMM yyyy').format(_selectedDate),
+                              DateFormat('dd MMMM yyyy').format(selectedDate),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
@@ -634,7 +634,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                               isScrollControlled: true,
                               useRootNavigator: true,
                               builder: (_) => AddExpenseOptionsSheet(
-                                initialDate: _selectedDate,
+                                initialDate: selectedDate,
                               ),
                             );
                           },
@@ -675,7 +675,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                             .where(
                               (e) => DateHelpers.isSameDay(
                                 e.expenseDate,
-                                _selectedDate,
+                                selectedDate,
                               ),
                             )
                             .toList();
@@ -714,7 +714,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                           );
                         }
                         return ref
-                            .watch(dailySummaryProvider(_selectedDate))
+                            .watch(dailySummaryProvider(selectedDate))
                             .when(
                               skipLoadingOnReload: true,
                               skipLoadingOnRefresh: true,
