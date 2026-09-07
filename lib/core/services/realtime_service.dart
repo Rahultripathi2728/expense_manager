@@ -15,6 +15,9 @@ import '../../features/settlement/data/settlement_repository.dart';
 import '../../features/settlement/presentation/settlement_page.dart';
 import '../../features/settlement/engine/providers/group_ledger_provider.dart';
 import '../../features/calendar/presentation/widgets/calendar_expense_card.dart';
+import '../../features/items/data/items_repository.dart';
+import '../../features/items/domain/group_item_model.dart';
+import 'cache_service.dart';
 
 class RealtimeService {
   final Realtime _realtime;
@@ -33,6 +36,7 @@ class RealtimeService {
       'databases.${AppConstants.databaseId}.collections.${AppConstants.notificationsCollection}.documents',
       'databases.${AppConstants.databaseId}.collections.${AppConstants.groupsCollection}.documents',
       'databases.${AppConstants.databaseId}.collections.${AppConstants.groupMembersCollection}.documents',
+      'databases.${AppConstants.databaseId}.collections.${AppConstants.listsCollection}.documents',
     ];
 
     try {
@@ -161,6 +165,41 @@ class RealtimeService {
           } catch (e) {
             debugPrint('Failed to process realtime notification event: $e');
             _ref.invalidate(notificationsProvider);
+          }
+        }
+
+        // ── Shopping / Group Items Event ──
+        if (event.channels.any((c) => c.contains(AppConstants.listsCollection))) {
+          try {
+            final id = doc['\$id'] as String? ?? doc['id'] as String? ?? '';
+            final groupId = doc['groupId'] as String?;
+            final cacheService = _ref.read(cacheServiceProvider);
+            final cached = cacheService.getCachedShoppingItems();
+
+            if (action.endsWith('.delete')) {
+              final updated = cached.where((i) => i.id != id).toList();
+              cacheService.cacheShoppingItems(updated);
+            } else {
+              final item = GroupItem.fromMap(doc);
+              final existingIndex = cached.indexWhere((i) => i.id == id);
+              final List<GroupItem> updated;
+              if (existingIndex >= 0) {
+                updated = [...cached]..[existingIndex] = item;
+              } else {
+                updated = [item, ...cached];
+              }
+              cacheService.cacheShoppingItems(updated);
+            }
+
+            _ref.invalidate(allUserItemsProvider);
+            _ref.invalidate(personalItemsProvider);
+            if (groupId != null && groupId.isNotEmpty && groupId != 'personal') {
+              _ref.invalidate(groupItemsProvider(groupId));
+            }
+          } catch (e) {
+            debugPrint('Failed to process realtime list item event: $e');
+            _ref.invalidate(allUserItemsProvider);
+            _ref.invalidate(personalItemsProvider);
           }
         }
       });

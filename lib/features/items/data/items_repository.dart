@@ -31,10 +31,12 @@ class ItemsRepository {
         ],
       );
       final remoteItems = res.rows.map((r) => GroupItem.fromMap(r.dataWithId)).toList();
-      final merged = _mergeItems(localGroup, remoteItems);
-      _sortItems(merged);
-      _updateTotalCache(merged);
-      return merged;
+      _sortItems(remoteItems);
+
+      // Ground truth from server: replace this group's cached items with remoteItems
+      final otherCached = cached.where((i) => i.groupId != groupId).toList();
+      await _cacheService.cacheShoppingItems([...remoteItems, ...otherCached]);
+      return remoteItems;
     } catch (_) {
       _sortItems(localGroup);
       return localGroup;
@@ -59,10 +61,12 @@ class ItemsRepository {
           .map((r) => GroupItem.fromMap(r.dataWithId))
           .where((i) => i.isPersonal && (i.addedBy == userId || i.addedBy.isEmpty))
           .toList();
-      final merged = _mergeItems(localPersonal, remoteItems);
-      _sortItems(merged);
-      _updateTotalCache(merged);
-      return merged;
+      _sortItems(remoteItems);
+
+      // Ground truth from server: replace personal cached items with remoteItems
+      final otherCached = cached.where((i) => !i.isPersonal || (i.addedBy != userId && i.addedBy.isNotEmpty)).toList();
+      await _cacheService.cacheShoppingItems([...remoteItems, ...otherCached]);
+      return remoteItems;
     } catch (_) {
       _sortItems(localPersonal);
       return localPersonal;
@@ -87,31 +91,13 @@ class ItemsRepository {
         groupItems.addAll(gList);
       }
 
-      final merged = _mergeItems(localAll, [...personalItems, ...groupItems]);
-      _sortItems(merged);
-      _updateTotalCache(merged);
-      return merged;
+      final allItems = [...personalItems, ...groupItems];
+      _sortItems(allItems);
+      return allItems;
     } catch (_) {
       _sortItems(localAll);
       return localAll;
     }
-  }
-
-  List<GroupItem> _mergeItems(List<GroupItem> local, List<GroupItem> remote) {
-    final map = <String, GroupItem>{};
-    for (final item in local) {
-      map[item.id] = item;
-    }
-    for (final item in remote) {
-      map[item.id] = item;
-    }
-    return map.values.toList();
-  }
-
-  void _updateTotalCache(List<GroupItem> latest) {
-    final existing = _cacheService.getCachedShoppingItems();
-    final merged = _mergeItems(existing, latest);
-    _cacheService.cacheShoppingItems(merged);
   }
 
   void _sortItems(List<GroupItem> items) {
