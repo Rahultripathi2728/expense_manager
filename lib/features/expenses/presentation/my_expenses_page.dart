@@ -18,7 +18,7 @@ import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
 import '../../../core/services/cache_service.dart';
 import 'export/statement_export_screen.dart';
-import 'utils/category_icon_helper.dart';
+import '../../calendar/presentation/widgets/calendar_expense_card.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
@@ -1175,197 +1175,121 @@ class _MyExpensesTab extends ConsumerWidget {
   }
 
   Widget _buildActivityRow(BuildContext context, CashFlowActivityItem item) {
-    final isExpense = item.type == CashFlowType.expense;
-    final isReceived = item.type == CashFlowType.settlementReceived;
-
-    final String amountText;
-    final Color amountColor;
-    final String tagText;
-    final Color tagBgColor;
-    final Color tagTextColor;
-
-    if (isExpense) {
-      if (item.isPaidByMe) {
-        if (item.groupName == 'Personal') {
-          amountText = '-${DateHelpers.formatCurrency(item.amount)}';
-          amountColor = AppColors.textPrimary;
-          tagText = 'Personal';
-          tagBgColor = const Color(0xFF10B981).withValues(alpha: 0.12);
-          tagTextColor = const Color(0xFF10B981);
-        } else {
-          amountText = '-${DateHelpers.formatCurrency(item.totalBillAmount > 0 ? item.totalBillAmount : item.amount)}';
-          amountColor = const Color(0xFFEF4444);
-          tagText = 'You Paid Full';
-          tagBgColor = AppColors.primary.withValues(alpha: 0.12);
-          tagTextColor = AppColors.primary;
-        }
-      } else {
-        amountText = DateHelpers.formatCurrency(item.myShareAmount > 0 ? item.myShareAmount : item.amount);
-        amountColor = const Color(0xFFD97706); // Amber
-        tagText = 'Your Share';
-        tagBgColor = const Color(0xFFFEF3C7);
-        tagTextColor = const Color(0xFFD97706);
-      }
-    } else if (isReceived) {
-      amountText = '+${DateHelpers.formatCurrency(item.amount)}';
-      amountColor = const Color(0xFF10B981);
-      tagText = 'Received';
-      tagBgColor = const Color(0xFFDCFCE7);
-      tagTextColor = const Color(0xFF16A34A);
-    } else {
-      amountText = '-${DateHelpers.formatCurrency(item.amount)}';
-      amountColor = const Color(0xFFEF4444);
-      tagText = 'Paid Out';
-      tagBgColor = const Color(0xFFFEE2E2);
-      tagTextColor = const Color(0xFFDC2626);
+    if (item.type == CashFlowType.expense && item.originalObject is Expense) {
+      return CalendarExpenseCard(expense: item.originalObject as Expense);
     }
+
+    final isReceived = item.type == CashFlowType.settlementReceived;
+    final badgeColor = isReceived ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+    final sign = isReceived ? '+' : '-';
 
     return InkWell(
       onTap: () {
         HapticHelper.lightTap();
-        if (item.originalObject is Expense) {
-          context.push('/expense-detail', extra: item.originalObject as Expense);
-        }
       },
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.borderLight),
+          border: Border.all(color: AppColors.borderLight, width: 1),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Left Icon
-            if (isExpense)
-              CategoryIconHelper.buildBadge(item.category ?? 'Other', size: 42, iconSize: 20)
-            else
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: isReceived
-                      ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                      : const Color(0xFFEF4444).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: badgeColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: badgeColor.withValues(alpha: 0.25)),
+              ),
+              child: Center(
                 child: Icon(
                   isReceived ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                  color: isReceived ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                  size: 20,
+                  color: badgeColor,
+                  size: 22,
                 ),
               ),
-            const SizedBox(width: 12),
-
-            // Middle Column: Title & Metadata
+            ),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    item.title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-
-                  // Subtitle info
-                  if (isExpense) ...[
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            item.groupName ?? 'Personal',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(
-                          ' • ${DateHelpers.formatDayMonth(item.date)}',
-                          style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-                        ),
-                      ],
-                    ),
-                    if (item.groupName != 'Personal')
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
                         child: Text(
-                          item.isPaidByMe
-                              ? 'Your share: ${DateHelpers.formatCurrency(item.myShareAmount)}'
-                              : 'Paid by ${item.payerName ?? 'Member'}',
+                          item.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        '$sign${DateHelpers.formatCurrency(item.amount)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: badgeColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          item.groupName ?? 'General',
                           style: TextStyle(
                             fontSize: 11,
-                            color: item.isPaidByMe ? AppColors.primary : AppColors.textTertiary,
-                            fontWeight: item.isPaidByMe ? FontWeight.w600 : FontWeight.normal,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                  ] else ...[
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            item.subtitle ?? 'Settlement',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Settled',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF10B981),
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          ' • ${DateHelpers.formatDayMonth(item.date)}',
-                          style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        DateHelpers.formatDayMonth(item.date),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-
-            // Right Column: Amount & Tag Pill
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  amountText,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: amountColor,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: tagBgColor,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    tagText,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: tagTextColor,
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
