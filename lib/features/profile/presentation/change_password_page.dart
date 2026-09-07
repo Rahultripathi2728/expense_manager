@@ -18,6 +18,8 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
   final _currentPasswordCtrl = TextEditingController();
   final _newPasswordCtrl = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+  final _otpNewPasswordCtrl = TextEditingController();
 
   bool _obscureCurrent = true;
   bool _obscureNew = true;
@@ -25,7 +27,9 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
 
   bool _isUpdating = false;
   bool _isSendingResetEmail = false;
-  bool _resetEmailSent = false;
+  bool _otpSent = false;
+  String? _otpUserId;
+  bool _isResettingWithOtp = false;
   String? _errorMessage;
 
   @override
@@ -33,7 +37,89 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
     _currentPasswordCtrl.dispose();
     _newPasswordCtrl.dispose();
     _confirmPasswordCtrl.dispose();
+    _otpCtrl.dispose();
+    _otpNewPasswordCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendPasswordResetOtp() async {
+    final user = ref.read(authStateProvider).valueOrNull;
+    if (user == null || user.email.isEmpty) return;
+    if (_isSendingResetEmail) return;
+
+    setState(() {
+      _isSendingResetEmail = true;
+      _errorMessage = null;
+    });
+    HapticHelper.lightTap();
+
+    try {
+      final uid = await ref.read(authStateProvider.notifier).sendPasswordResetOtp(user.email);
+      if (mounted) {
+        HapticHelper.mediumTap();
+        setState(() {
+          _otpSent = true;
+          _otpUserId = uid;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to send OTP code. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingResetEmail = false);
+      }
+    }
+  }
+
+  Future<void> _resetPasswordWithOtp() async {
+    final code = _otpCtrl.text.trim();
+    final newPass = _otpNewPasswordCtrl.text.trim();
+    if (code.length < 6) {
+      setState(() => _errorMessage = 'Please enter a valid 6-digit OTP code');
+      return;
+    }
+    if (newPass.length < 6) {
+      setState(() => _errorMessage = 'New password must be at least 6 characters');
+      return;
+    }
+
+    setState(() {
+      _isResettingWithOtp = true;
+      _errorMessage = null;
+    });
+    HapticHelper.lightTap();
+
+    try {
+      await ref.read(authStateProvider.notifier).resetPasswordWithOtp(
+            userId: _otpUserId ?? '',
+            otpCode: code,
+            newPassword: newPass,
+          );
+      if (mounted) {
+        HapticHelper.mediumTap();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset successfully!'),
+            backgroundColor: Color(0xFF10B981),
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Invalid or expired OTP code. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isResettingWithOtp = false);
+      }
+    }
   }
 
   Future<void> _updatePassword() async {
@@ -72,77 +158,6 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
     } finally {
       if (mounted) {
         setState(() => _isUpdating = false);
-      }
-    }
-  }
-
-  Future<void> _sendRecoveryEmail() async {
-    final user = ref.read(authStateProvider).valueOrNull;
-    if (user == null || user.email.isEmpty) return;
-    if (_isSendingResetEmail) return;
-
-    setState(() {
-      _isSendingResetEmail = true;
-      _errorMessage = null;
-    });
-    HapticHelper.lightTap();
-
-    try {
-      await ref.read(authRepositoryProvider).forgotPassword(user.email);
-      if (mounted) {
-        HapticHelper.mediumTap();
-        setState(() => _resetEmailSent = true);
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: AppColors.surface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.mark_email_read_rounded, color: Color(0xFF10B981), size: 28),
-                SizedBox(width: 10),
-                Text('Reset Email Sent', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14.5, height: 1.45),
-                    children: [
-                      const TextSpan(text: 'We have dispatched a password recovery link to:\n\n'),
-                      TextSpan(
-                        text: user.email,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const TextSpan(
-                        text: '\n\nPlease check your inbox and spam folder to create a new password.',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Failed to send reset email. Please try again in a few moments.';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSendingResetEmail = false);
       }
     }
   }
@@ -390,7 +405,7 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
               ),
               const SizedBox(height: 24),
 
-              // Method 2: Try Another Way (Email Recovery)
+              // Method 2: Reset via Email OTP Code
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -409,11 +424,11 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
                             color: const Color(0xFF10B981).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.email_outlined, size: 16, color: Color(0xFF10B981)),
+                          child: const Icon(Icons.mark_email_read_rounded, size: 16, color: Color(0xFF10B981)),
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'Method 2: Reset via Registered Email',
+                          'Method 2: Verify with Email OTP',
                           style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.bold,
@@ -424,35 +439,85 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Forgot your current password? We can send a secure password reset link directly to your verified email address (${user?.email ?? "your email"}).',
+                      'Forgot your current password? We can send a 6-digit verification code to ${user?.email ?? "your email"} to verify your identity and set a new password.',
                       style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
                     ),
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _isSendingResetEmail ? null : _sendRecoveryEmail,
-                        icon: _isSendingResetEmail
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send_rounded, size: 16),
-                        label: Text(
-                          _resetEmailSent
-                              ? 'Resend Reset Email'
-                              : 'Send Password Reset Link',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF10B981),
-                          side: const BorderSide(color: Color(0xFF10B981)),
-                          minimumSize: const Size.fromHeight(48),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    if (!_otpSent) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _isSendingResetEmail ? null : _sendPasswordResetOtp,
+                          icon: _isSendingResetEmail
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.send_rounded, size: 16),
+                          label: const Text(
+                            'Send 6-Digit OTP to Email',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF10B981),
+                            side: const BorderSide(color: Color(0xFF10B981)),
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
-                    ),
+                    ] else ...[
+                      TextField(
+                        controller: _otpCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 6),
+                        decoration: InputDecoration(
+                          labelText: 'Enter 6-Digit Code',
+                          counterText: '',
+                          filled: true,
+                          fillColor: AppColors.background,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _otpNewPasswordCtrl,
+                        obscureText: _obscureNew,
+                        decoration: InputDecoration(
+                          labelText: 'New Password',
+                          prefixIcon: const Icon(Icons.lock_reset_rounded),
+                          filled: true,
+                          fillColor: AppColors.background,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isResettingWithOtp ? null : _resetPasswordWithOtp,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: _isResettingWithOtp
+                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text('Verify OTP & Update Password', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: _isSendingResetEmail ? null : _sendPasswordResetOtp,
+                          child: const Text('Resend OTP Code', style: TextStyle(color: Color(0xFF10B981), fontSize: 12)),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

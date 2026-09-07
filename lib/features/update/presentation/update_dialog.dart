@@ -1,12 +1,10 @@
-import 'dart:io' show Platform, File;
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';
 import '../data/update_service.dart';
 
-class UpdateDialog extends StatefulWidget {
+class UpdateDialog extends ConsumerStatefulWidget {
   final UpdateInfo updateInfo;
 
   const UpdateDialog({super.key, required this.updateInfo});
@@ -14,21 +12,16 @@ class UpdateDialog extends StatefulWidget {
   static void show(BuildContext context, UpdateInfo updateInfo) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (context) => UpdateDialog(updateInfo: updateInfo),
     );
   }
 
   @override
-  State<UpdateDialog> createState() => _UpdateDialogState();
+  ConsumerState<UpdateDialog> createState() => _UpdateDialogState();
 }
 
-class _UpdateDialogState extends State<UpdateDialog> {
-  bool _isDownloading = false;
-  double _downloadProgress = 0.0;
-  String _statusMessage = '';
-  String? _errorMessage;
-
+class _UpdateDialogState extends ConsumerState<UpdateDialog> {
   Future<void> _launchBrowser() async {
     if (widget.updateInfo.releaseUrl != null) {
       final url = Uri.parse(widget.updateInfo.releaseUrl!);
@@ -38,180 +31,117 @@ class _UpdateDialogState extends State<UpdateDialog> {
     }
   }
 
-  Future<void> _startUpdate() async {
-    // If not Android or apkUrl is null, fallback to browser
-    if (!Platform.isAndroid || widget.updateInfo.apkUrl == null) {
-      _launchBrowser();
-      Navigator.of(context).pop();
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _downloadProgress = 0.0;
-      _statusMessage = 'Starting download...';
-      _errorMessage = null;
-    });
-
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final filePath = '${tempDir.path}/expense_manager_update_${widget.updateInfo.latestVersion}.apk';
-      final file = File(filePath);
-
-      // Check if file is already completely downloaded from previous attempt
-      if (await file.exists()) {
-        final existingLength = await file.length();
-        if (existingLength > 15 * 1024 * 1024) { // Valid APK size (>15MB)
-          if (mounted) {
-            setState(() {
-              _statusMessage = 'Update already downloaded. Opening installer...';
-              _downloadProgress = 100.0;
-            });
-          }
-          final result = await OpenFilex.open(
-            filePath,
-            type: 'application/vnd.android.package-archive',
-          );
-          if (mounted) {
-            setState(() {
-              _isDownloading = false;
-              if (result.type != ResultType.done) {
-                _errorMessage = 'Failed to launch installer: ${result.message}\nPlease enable "Install unknown apps" in Settings.';
-              } else {
-                _statusMessage = 'Installation initiated.';
-              }
-            });
-          }
-          return;
-        } else {
-          // Incomplete file, delete and re-download
-          await file.delete();
-        }
-      }
-
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(widget.updateInfo.apkUrl!));
-      final response = await client.send(request);
-
-      if (response.statusCode != 200 && response.statusCode != 302) {
-        throw Exception('Failed to download update. Server returned ${response.statusCode}');
-      }
-
-      final contentLength = response.contentLength ?? 0;
-      var receivedBytes = 0;
-      final sink = file.openWrite();
-
-      await for (var chunk in response.stream) {
-        sink.add(chunk);
-        receivedBytes += chunk.length;
-        if (contentLength > 0 && mounted) {
-          setState(() {
-            _downloadProgress = (receivedBytes / contentLength) * 100;
-            _statusMessage = 'Downloading update...';
-          });
-        }
-      }
-      
-      await sink.flush();
-      await sink.close();
-
-      if (mounted) {
-        setState(() {
-          _statusMessage = 'Preparing installer...';
-          _downloadProgress = 100.0;
-        });
-      }
-
-      final result = await OpenFilex.open(
-        filePath,
-        type: 'application/vnd.android.package-archive',
-      );
-      
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-          if (result.type != ResultType.done) {
-            _errorMessage = 'Failed to launch installer: ${result.message}\nPlease enable "Install unknown apps" in Settings if prompted.';
-          } else {
-            _statusMessage = 'Installation initiated.';
-          }
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Update failed: $e';
-        _isDownloading = false;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_isDownloading,
-      child: AlertDialog(
-        title: const Text('Update Available!'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'A new version (${widget.updateInfo.latestVersion}) of the app is available. '
-              'Please update to get the latest features and bug fixes.',
+    final downloadState = ref.watch(updateDownloadProvider);
+    final isDownloading = downloadState.status == UpdateStatus.downloading;
+    final isReady = downloadState.status == UpdateStatus.readyToInstall;
+    final errorMessage = downloadState.errorMessage;
+
+    return AlertDialog(
+      title: const Text('Update Available!'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'A new version (${widget.updateInfo.latestVersion}) of Split Pro is available. '
+            'Please update to get the latest features, security enhancements, and improvements.',
+          ),
+          if (isDownloading) ...[
+            const SizedBox(height: 20),
+            LinearProgressIndicator(value: downloadState.progress / 100),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    downloadState.statusMessage ?? 'Downloading update...',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${downloadState.progress.toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-            if (_isDownloading) ...[
-              const SizedBox(height: 20),
-              LinearProgressIndicator(value: _downloadProgress / 100),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          ],
+          if (isReady) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
                 children: [
+                  Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 18),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _statusMessage,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
+                      'Update downloaded! Ready to install.',
+                      style: TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${_downloadProgress.toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
-            ],
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 16),
-              Text(
-                _errorMessage!,
-                style: const TextStyle(color: Colors.red, fontSize: 13),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          if (!_isDownloading) ...[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Later'),
             ),
-            if (_errorMessage != null)
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(minimumSize: const Size(100, 48)),
-                onPressed: _launchBrowser,
-                child: const Text('Open in Browser'),
-              )
-            else
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(minimumSize: const Size(100, 48)),
-                onPressed: _startUpdate,
-                child: const Text('Update Now'),
-              ),
+          ],
+          if (errorMessage != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              errorMessage,
+              style: const TextStyle(color: Colors.red, fontSize: 13),
+            ),
           ],
         ],
       ),
+      actions: [
+        if (isDownloading) ...[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Download in Background'),
+          ),
+        ] else if (isReady) ...[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Later'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              ref.read(updateDownloadProvider.notifier).installApk();
+              Navigator.of(context).pop();
+            },
+            child: const Text('Install Now'),
+          ),
+        ] else ...[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Later'),
+          ),
+          if (!Platform.isAndroid || widget.updateInfo.apkUrl == null)
+            ElevatedButton(
+              onPressed: _launchBrowser,
+              child: const Text('Open in Browser'),
+            )
+          else
+            ElevatedButton(
+              onPressed: () {
+                ref.read(updateDownloadProvider.notifier).startDownload(widget.updateInfo);
+              },
+              child: const Text('Update Now'),
+            ),
+        ],
+      ],
     );
   }
 }

@@ -29,12 +29,38 @@ class FakeAuthRepository implements AuthRepository {
   Future<void> signOut() async {}
 
   @override
-  Future<void> sendMagicLink({required String email}) async {}
+  Future<String> sendMagicLink({required String email}) async => 'fake_user_id';
 
   @override
   Future<UserModel> verifyMagicLink({required String userId, required String secret}) async {
     throw UnimplementedError();
   }
+
+  @override
+  Future<bool> verifyCurrentPassword(String currentPassword) async => true;
+
+  @override
+  Future<String> sendEmailChangeOtp({required String newEmail}) async => 'fake_user_id';
+
+  @override
+  Future<UserModel> completeEmailChange({
+    required String newEmail,
+    required String currentPassword,
+    required String tempUserId,
+    required String otpCode,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> sendPasswordResetOtp(String email) async => 'fake_user_id';
+
+  @override
+  Future<void> resetPasswordWithOtp({
+    required String userId,
+    required String otpCode,
+    required String newPassword,
+  }) async {}
 
   @override
   Future<UserModel> signUp({

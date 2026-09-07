@@ -31,6 +31,7 @@ import '../../features/items/presentation/add_item_screen.dart';
 import '../../features/profile/presentation/profile_page.dart';
 import '../../features/profile/presentation/edit_profile_page.dart';
 import '../../features/profile/presentation/change_password_page.dart';
+import '../../features/profile/presentation/change_email_page.dart';
 import '../../features/profile/presentation/about_page.dart';
 import '../../features/notifications/presentation/notifications_page.dart';
 import '../../shared/widgets/app_shell.dart';
@@ -208,6 +209,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/change-password',
         builder: (_, __) => const ChangePasswordPage(),
+      ),
+      GoRoute(
+        path: '/profile/change-email',
+        builder: (_, __) => const ChangeEmailPage(),
       ),
       GoRoute(
         path: '/profile/about',

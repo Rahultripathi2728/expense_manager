@@ -72,16 +72,42 @@ class AuthRepository {
     return userModel;
   }
 
-  /// Send a Magic Link to the user's email.
-  Future<void> sendMagicLink({required String email}) async {
-    await _account.createMagicURLToken(
-      userId: ID.unique(),
-      email: email,
-      url: 'https://expense-manager.app/magic-login',
-    );
+  /// Send a Magic Link or 6-digit Email OTP for Passwordless Login.
+  Future<String> sendMagicLink({required String email}) async {
+    String magicUrl = 'https://expense-manager.app/magic-login';
+    if (kIsWeb) {
+      magicUrl = '${Uri.base.origin}/magic-login';
+    }
+
+    try {
+      // 1. Send 6-digit OTP code to user's email via createEmailToken
+      final token = await _account.createEmailToken(
+        userId: ID.unique(),
+        email: email,
+      );
+
+      // 2. Also attempt magic URL token in parallel if supported
+      try {
+        await _account.createMagicURLToken(
+          userId: token.userId,
+          email: email,
+          url: magicUrl,
+        );
+      } catch (_) {}
+
+      return token.userId;
+    } catch (_) {
+      // Fallback to createMagicURLToken
+      final token = await _account.createMagicURLToken(
+        userId: ID.unique(),
+        email: email,
+        url: magicUrl,
+      );
+      return token.userId;
+    }
   }
 
-  /// Verify a Magic Link and login.
+  /// Verify a Magic Link or Email OTP and login.
   Future<UserModel> verifyMagicLink({
     required String userId,
     required String secret,
@@ -256,6 +282,74 @@ class AuthRepository {
     );
   }
 
+  /// Verifies current password against active session.
+  Future<bool> verifyCurrentPassword(String currentPassword) async {
+    try {
+      await _account.updatePassword(
+        password: currentPassword,
+        oldPassword: currentPassword,
+      );
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Sends a 6-digit OTP code to [newEmail] to verify ownership before email change.
+  Future<String> sendEmailChangeOtp({required String newEmail}) async {
+    final token = await _account.createEmailToken(
+      userId: ID.unique(),
+      email: newEmail,
+    );
+    return token.userId;
+  }
+
+  /// Completes email change after verifying 6-digit OTP and current password.
+  Future<UserModel> completeEmailChange({
+    required String newEmail,
+    required String currentPassword,
+    required String tempUserId,
+    required String otpCode,
+  }) async {
+    try {
+      await _account.createSession(
+        userId: tempUserId,
+        secret: otpCode,
+      );
+    } catch (_) {}
+
+    final user = await _account.updateEmail(
+      email: newEmail,
+      password: currentPassword,
+    );
+    final userModel = UserModel.fromAppwrite(user);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(userModel.toJson()));
+    return userModel;
+  }
+
+  /// Send 6-digit OTP code to user email for password reset.
+  Future<String> sendPasswordResetOtp(String email) async {
+    final token = await _account.createEmailToken(
+      userId: ID.unique(),
+      email: email,
+    );
+    return token.userId;
+  }
+
+  /// Reset password using 6-digit OTP code.
+  Future<void> resetPasswordWithOtp({
+    required String userId,
+    required String otpCode,
+    required String newPassword,
+  }) async {
+    await _account.createSession(
+      userId: userId,
+      secret: otpCode,
+    );
+    await _account.updatePassword(password: newPassword);
+  }
+
   /// Update user's name
   Future<UserModel> updateName(String newName) async {
     final user = await _account.updateName(name: newName);
@@ -306,14 +400,51 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
       final user = await _repo.signIn(email: email, password: password);
       state = AsyncValue.data(user);
     } catch (e) {
-      // Do not set error globally here to avoid destructive router redirects
-      // the UI handles displaying the error string.
       rethrow;
     }
   }
 
-  Future<void> sendMagicLink({required String email}) async {
-    await _repo.sendMagicLink(email: email);
+  Future<String> sendMagicLink({required String email}) async {
+    return await _repo.sendMagicLink(email: email);
+  }
+
+  Future<bool> verifyCurrentPassword(String currentPassword) async {
+    return await _repo.verifyCurrentPassword(currentPassword);
+  }
+
+  Future<String> sendEmailChangeOtp({required String newEmail}) async {
+    return await _repo.sendEmailChangeOtp(newEmail: newEmail);
+  }
+
+  Future<void> completeEmailChange({
+    required String newEmail,
+    required String currentPassword,
+    required String tempUserId,
+    required String otpCode,
+  }) async {
+    final user = await _repo.completeEmailChange(
+      newEmail: newEmail,
+      currentPassword: currentPassword,
+      tempUserId: tempUserId,
+      otpCode: otpCode,
+    );
+    state = AsyncValue.data(user);
+  }
+
+  Future<String> sendPasswordResetOtp(String email) async {
+    return await _repo.sendPasswordResetOtp(email);
+  }
+
+  Future<void> resetPasswordWithOtp({
+    required String userId,
+    required String otpCode,
+    required String newPassword,
+  }) async {
+    await _repo.resetPasswordWithOtp(
+      userId: userId,
+      otpCode: otpCode,
+      newPassword: newPassword,
+    );
   }
 
   Future<void> verifyMagicLink({

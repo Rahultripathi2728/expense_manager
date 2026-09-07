@@ -69,17 +69,148 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     });
 
     try {
-      await ref.read(authStateProvider.notifier).sendMagicLink(email: email);
+      final tempUserId = await ref.read(authStateProvider.notifier).sendMagicLink(email: email);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Magic link sent to your email!')),
-        );
+        _showMagicOtpSheet(context, tempUserId, email);
       }
     } catch (e) {
       if (mounted) setState(() => _error = ErrorFormatter.format(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showMagicOtpSheet(BuildContext context, String tempUserId, String email) {
+    final otpCtrl = TextEditingController();
+    bool verifying = false;
+    String? sheetError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.mark_email_read_rounded, color: AppColors.primary, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Enter Login Code', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                          Text('6-digit code sent to $email', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (sheetError != null)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(sheetError!, style: TextStyle(color: AppColors.error, fontSize: 13)),
+                  ),
+                TextField(
+                  controller: otpCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
+                  decoration: InputDecoration(
+                    hintText: '000000',
+                    counterText: '',
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: verifying
+                        ? null
+                        : () async {
+                            final code = otpCtrl.text.trim();
+                            if (code.length < 6) {
+                              setSheetState(() => sheetError = 'Please enter a 6-digit code');
+                              return;
+                            }
+                            setSheetState(() {
+                              verifying = true;
+                              sheetError = null;
+                            });
+                            try {
+                              await ref.read(authStateProvider.notifier).verifyMagicLink(
+                                    userId: tempUserId,
+                                    secret: code,
+                                  );
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            } catch (e) {
+                              setSheetState(() {
+                                verifying = false;
+                                sheetError = ErrorFormatter.format(e);
+                              });
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: verifying
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Verify & Sign In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildToggle(BuildContext context, bool isSignIn) {

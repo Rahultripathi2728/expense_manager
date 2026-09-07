@@ -109,6 +109,15 @@ class ProfilePage extends ConsumerWidget {
                   const Divider(height: 1, indent: 56),
 
                   _SettingsTile(
+                    icon: Icons.mail_lock_rounded,
+                    iconColor: const Color(0xFF0EA5E9),
+                    title: 'Change Email',
+                    subtitle: user?.email ?? 'Update email address',
+                    onTap: () => context.push('/profile/change-email'),
+                  ),
+                  const Divider(height: 1, indent: 56),
+
+                  _SettingsTile(
                     icon: Icons.lock_rounded,
                     iconColor: const Color(0xFFF59E0B),
                     title: 'Change Password',
@@ -116,11 +125,116 @@ class ProfilePage extends ConsumerWidget {
                     onTap: () => context.push('/profile/change-password'),
                   ),
                   const Divider(height: 1, indent: 56),
-                  _SettingsTile(
-                    icon: Icons.system_update_rounded,
-                    iconColor: const Color(0xFF8B5CF6),
-                    title: 'Check for Updates',
-                    onTap: () => _checkUpdate(context, ref),
+
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final updateState = ref.watch(updateDownloadProvider);
+                      if (updateState.status == UpdateStatus.downloading) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF8B5CF6).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF8B5CF6),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Downloading Update (${updateState.progress.toStringAsFixed(0)}%)...',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Color(0xFF8B5CF6),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: updateState.progress / 100,
+                                  minHeight: 6,
+                                  backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else if (updateState.status == UpdateStatus.readyToInstall) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                          ),
+                          child: InkWell(
+                            onTap: () => ref.read(updateDownloadProvider.notifier).installApk(),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.install_mobile_rounded, color: Colors.white, size: 18),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Update Ready!',
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF10B981)),
+                                      ),
+                                      Text(
+                                        'Tap here to install now',
+                                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => ref.read(updateDownloadProvider.notifier).installApk(),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF10B981),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    minimumSize: const Size(0, 32),
+                                  ),
+                                  child: const Text('Install', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return _SettingsTile(
+                        icon: Icons.system_update_rounded,
+                        iconColor: const Color(0xFF8B5CF6),
+                        title: 'Check for Updates',
+                        subtitle: 'Download in background & install',
+                        onTap: () => _checkUpdate(context, ref),
+                      );
+                    },
                   ),
                   const Divider(height: 1, indent: 56),
                   _SettingsTile(
