@@ -36,11 +36,11 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             node -e "require('fs').writeFileSync('android/app/upload-keystore.jks', Buffer.from(process.env.KEYSTORE_BASE64, 'base64'))"
             cat <<EOF > android/key.properties
-          storePassword=$KEYSTORE_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          storeFile=upload-keystore.jks
-          EOF
+storePassword=$KEYSTORE_PASSWORD
+keyPassword=$KEY_PASSWORD
+keyAlias=$KEY_ALIAS
+storeFile=upload-keystore.jks
+EOF
             echo "Production keystore configured successfully."
           else
             echo "Warning: KEYSTORE_BASE64 secret not found. Falling back to debug signing."
