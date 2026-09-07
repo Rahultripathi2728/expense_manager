@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -34,7 +34,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            node -e "require('fs').writeFileSync('android/app/upload-keystore.jks', Buffer.from(process.env.KEYSTORE_BASE64, 'base64'))"
             cat <<EOF > android/key.properties
           storePassword=$KEYSTORE_PASSWORD
           keyPassword=$KEY_PASSWORD
