@@ -86,20 +86,23 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
       if (mounted) {
         setState(() {
-          _statusMessage = 'Installing update...';
+          _statusMessage = 'Preparing installer...';
           _downloadProgress = 100.0;
         });
       }
 
-      final result = await OpenFilex.open(filePath);
+      final result = await OpenFilex.open(
+        filePath,
+        type: 'application/vnd.android.package-archive',
+      );
       
       if (mounted) {
         setState(() {
           _isDownloading = false;
           if (result.type != ResultType.done) {
-            _errorMessage = 'Failed to open installer: ${result.message}';
+            _errorMessage = 'Failed to launch installer: ${result.message}\nPlease enable "Install unknown apps" in Settings if prompted.';
           } else {
-            _statusMessage = 'Installation started.';
+            _statusMessage = 'Installation initiated.';
           }
         });
       }
