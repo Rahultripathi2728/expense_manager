@@ -22,6 +22,7 @@ import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 
+import '../engine/models/group_ledger_state.dart';
 import '../engine/providers/group_ledger_provider.dart';
 
 final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
@@ -98,18 +99,78 @@ class GroupBalanceData {
     this.settlements = const [],
   });
 
-  /// An expense is ONLY fully settled when marked settled in DB or an actual settlement references it.
-  bool isExpenseFullySettled(Expense expense) {
-    if (expense.isSettled) return true;
-    return settlements.any((s) => s.settledExpenseIds.contains(expense.id));
+  /// Returns the settlement status for an expense.
+  ExpenseSettlementStatus getExpenseSettlementStatus(Expense expense) {
+    if (expense.isSettled) return ExpenseSettlementStatus.fullySettled;
+
+    final splits = splitsByExpense[expense.id] ?? [];
+    final debtorIds = splits
+        .where((s) => s.userId != expense.userId && s.isIncluded)
+        .map((s) => s.userId)
+        .toSet();
+
+    final settlementsForExp = settlements
+        .where((s) => s.settledExpenseIds.contains(expense.id))
+        .toList();
+
+    if (settlementsForExp.isEmpty) {
+      return ExpenseSettlementStatus.unsettled;
+    }
+
+    if (debtorIds.isEmpty) {
+      return ExpenseSettlementStatus.fullySettled;
+    }
+
+    final settledDebtorIds = settlementsForExp.map((s) => s.fromUserId).toSet();
+    final allSettled = debtorIds.every(settledDebtorIds.contains);
+
+    if (allSettled) {
+      return ExpenseSettlementStatus.fullySettled;
+    } else {
+      return ExpenseSettlementStatus.partiallySettled;
+    }
   }
 
-  /// Whether ANY member has paid their share against this expense.
-  /// Golden Rule: Only real recorded settlements in DB lock an expense!
-  /// Adding other bills or having positive balances NEVER locks an expense!
+  /// True ONLY when all included debtors have settled their share.
+  bool isExpenseFullySettled(Expense expense) {
+    return getExpenseSettlementStatus(expense) == ExpenseSettlementStatus.fullySettled;
+  }
+
+  /// True when some participants have paid, but others are still pending.
+  bool isExpensePartiallySettled(Expense expense) {
+    return getExpenseSettlementStatus(expense) == ExpenseSettlementStatus.partiallySettled;
+  }
+
+  /// An expense is locked if it is either partially or fully settled.
+  bool isExpenseLocked(Expense expense) {
+    final status = getExpenseSettlementStatus(expense);
+    return status == ExpenseSettlementStatus.partiallySettled ||
+        status == ExpenseSettlementStatus.fullySettled;
+  }
+
   bool isExpensePartiallyOrFullySettled(Expense expense) {
-    if (expense.isSettled) return true;
-    return settlements.any((s) => s.settledExpenseIds.contains(expense.id));
+    return isExpenseLocked(expense);
+  }
+
+  int getSettledDebtorsCount(Expense expense) {
+    final splits = splitsByExpense[expense.id] ?? [];
+    final debtorIds = splits
+        .where((s) => s.userId != expense.userId && s.isIncluded)
+        .map((s) => s.userId)
+        .toSet();
+    final settlementsForExp = settlements
+        .where((s) => s.settledExpenseIds.contains(expense.id))
+        .toList();
+    final settledDebtors = settlementsForExp
+        .map((s) => s.fromUserId)
+        .where(debtorIds.contains)
+        .toSet();
+    return settledDebtors.length;
+  }
+
+  int getTotalDebtorsCount(Expense expense) {
+    final splits = splitsByExpense[expense.id] ?? [];
+    return splits.where((s) => s.userId != expense.userId && s.isIncluded).length;
   }
 
   /// Get the settlement recorded specifically for a debtor paying the payer for an expense

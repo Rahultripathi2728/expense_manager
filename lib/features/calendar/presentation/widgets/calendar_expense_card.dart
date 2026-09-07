@@ -103,13 +103,22 @@ class CalendarExpenseCard extends ConsumerWidget {
     final splits = splitsAsync.valueOrNull ?? [];
 
     final balancesData = groupBalancesAsync.valueOrNull;
-    bool isSettled = expense.isSettled;
-    if (!isSettled && isGroup && balancesData != null) {
-      isSettled = balancesData.isExpenseFullySettled(expense);
+    bool isFullySettled = expense.isSettled;
+    bool isPartiallySettled = false;
+    bool isLocked = expense.isSettled;
+    int settledDebtors = 0;
+    int totalDebtors = 0;
+
+    if (isGroup && balancesData != null) {
+      isFullySettled = balancesData.isExpenseFullySettled(expense);
+      isPartiallySettled = balancesData.isExpensePartiallySettled(expense);
+      isLocked = balancesData.isExpenseLocked(expense);
+      settledDebtors = balancesData.getSettledDebtorsCount(expense);
+      totalDebtors = balancesData.getTotalDebtorsCount(expense);
     }
 
     bool isMyShareSettled = false;
-    if (isGroup && !isSettled && currentUser != null && balancesData != null && expense.userId != currentUser.id) {
+    if (isGroup && !isFullySettled && currentUser != null && balancesData != null && expense.userId != currentUser.id) {
       final remaining = balancesData.remainingOwedPerUserPerExpense[expense.id]?[currentUser.id];
       if (remaining != null && remaining <= AppConstants.splitEpsilon) {
         isMyShareSettled = true;
@@ -155,7 +164,7 @@ class CalendarExpenseCard extends ConsumerWidget {
                         Expanded(
                           child: Row(
                             children: [
-                              if (isSettled || (isGroup && currentUser != null && expense.userId != currentUser.id))
+                              if (isLocked || (isGroup && currentUser != null && expense.userId != currentUser.id))
                                 Padding(
                                   padding: const EdgeInsets.only(right: 6.0),
                                   child: Icon(Icons.lock_outline, size: 14, color: AppColors.textSecondary),
@@ -166,8 +175,8 @@ class CalendarExpenseCard extends ConsumerWidget {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    color: isSettled ? AppColors.textSecondary : AppColors.textPrimary,
-                                    decoration: isSettled
+                                    color: isFullySettled ? AppColors.textSecondary : AppColors.textPrimary,
+                                    decoration: isFullySettled
                                         ? TextDecoration.lineThrough
                                         : null,
                                   ),
@@ -183,7 +192,7 @@ class CalendarExpenseCard extends ConsumerWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
-                            color: isSettled ? AppColors.textSecondary : AppColors.textPrimary,
+                            color: isFullySettled ? AppColors.textSecondary : AppColors.textPrimary,
                           ),
                         ),
                       ],
@@ -291,8 +300,8 @@ class CalendarExpenseCard extends ConsumerWidget {
                                 ),
                               ],
 
-                              // Settled Badge
-                              if (isSettled)
+                              // Settled Badge (Full)
+                              if (isFullySettled)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 6,
@@ -318,6 +327,38 @@ class CalendarExpenseCard extends ConsumerWidget {
                                         style: TextStyle(
                                           fontSize: 11,
                                           color: Color(0xFF16A34A),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isPartiallySettled)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7), // Faint amber
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.pie_chart_outline,
+                                        size: 12,
+                                        color: Color(0xFFD97706),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        totalDebtors > 0
+                                            ? 'Partially Settled ($settledDebtors/$totalDebtors)'
+                                            : 'Partially Settled',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFFD97706),
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),

@@ -5,6 +5,12 @@ import '../../../profile/domain/profile_model.dart';
 import '../../domain/settlement_model.dart';
 import 'simplified_debt.dart';
 
+enum ExpenseSettlementStatus {
+  unsettled,
+  partiallySettled,
+  fullySettled,
+}
+
 /// Complete, immutable state of a group's cumulative financial ledger.
 class GroupLedgerState {
   final int membersCount;
@@ -63,24 +69,85 @@ class GroupLedgerState {
         (sum, e) => sum + e.amount,
       );
 
-  /// Golden Rule: An expense is ONLY locked from editing or deletion if:
-  /// 1. It is explicitly marked settled in DB (`expense.isSettled == true`).
-  /// 2. OR an actual cash settlement has been recorded in DB referencing this expense ID.
-  /// Adding new bills or having a positive/negative net balance NEVER locks an expense!
-  bool isExpenseLocked(Expense expense) {
-    if (expense.isSettled) return true;
-    return settlements.any((s) => s.settledExpenseIds.contains(expense.id));
+  /// Returns the settlement status for an expense:
+  /// - fullySettled: marked settled in DB or ALL included debtors have recorded settlements.
+  /// - partiallySettled: at least 1 debtor has recorded a settlement, but other debtors remain pending.
+  /// - unsettled: no debtors have settled.
+  ExpenseSettlementStatus getExpenseSettlementStatus(Expense expense) {
+    if (expense.isSettled) return ExpenseSettlementStatus.fullySettled;
+
+    final splits = splitsByExpense[expense.id] ?? [];
+    final debtorIds = splits
+        .where((s) => s.userId != expense.userId && s.isIncluded)
+        .map((s) => s.userId)
+        .toSet();
+
+    final settlementsForExp = settlements
+        .where((s) => s.settledExpenseIds.contains(expense.id))
+        .toList();
+
+    if (settlementsForExp.isEmpty) {
+      return ExpenseSettlementStatus.unsettled;
+    }
+
+    if (debtorIds.isEmpty) {
+      return ExpenseSettlementStatus.fullySettled;
+    }
+
+    final settledDebtorIds = settlementsForExp.map((s) => s.fromUserId).toSet();
+    final allSettled = debtorIds.every(settledDebtorIds.contains);
+
+    if (allSettled) {
+      return ExpenseSettlementStatus.fullySettled;
+    } else {
+      return ExpenseSettlementStatus.partiallySettled;
+    }
   }
 
-  /// Whether an expense is fully settled.
+  /// True ONLY when the entire bill is completely settled by all participants.
   bool isExpenseFullySettled(Expense expense) {
-    if (expense.isSettled) return true;
-    return isExpenseLocked(expense);
+    return getExpenseSettlementStatus(expense) == ExpenseSettlementStatus.fullySettled;
+  }
+
+  /// True when some participants have paid, but others are still pending.
+  bool isExpensePartiallySettled(Expense expense) {
+    return getExpenseSettlementStatus(expense) == ExpenseSettlementStatus.partiallySettled;
+  }
+
+  /// An expense is locked if it is either partially or fully settled.
+  /// (Cannot edit or delete if any member has already paid their share!).
+  bool isExpenseLocked(Expense expense) {
+    final status = getExpenseSettlementStatus(expense);
+    return status == ExpenseSettlementStatus.partiallySettled ||
+        status == ExpenseSettlementStatus.fullySettled;
   }
 
   /// Whether an expense has any recorded settlements against it.
   bool isExpensePartiallyOrFullySettled(Expense expense) {
     return isExpenseLocked(expense);
+  }
+
+  /// Count of debtors who have settled their share for this expense.
+  int getSettledDebtorsCount(Expense expense) {
+    final splits = splitsByExpense[expense.id] ?? [];
+    final debtorIds = splits
+        .where((s) => s.userId != expense.userId && s.isIncluded)
+        .map((s) => s.userId)
+        .toSet();
+    final settlementsForExp = settlements
+        .where((s) => s.settledExpenseIds.contains(expense.id))
+        .toList();
+    final settledDebtors = settlementsForExp
+        .map((s) => s.fromUserId)
+        .where(debtorIds.contains)
+        .toSet();
+    return settledDebtors.length;
+  }
+
+  /// Total count of debtors who owe for this expense.
+  int getTotalDebtorsCount(Expense expense) {
+    final splits = splitsByExpense[expense.id] ?? [];
+    return splits.where((s) => s.userId != expense.userId && s.isIncluded).length;
   }
 
   /// Returns the net balance for a given user.

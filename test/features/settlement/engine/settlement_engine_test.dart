@@ -174,5 +174,82 @@ void main() {
       expect(ledger.getMemberNet('u2'), -200.0);
       expect(ledger.getMemberNet('u3'), -200.0);
     });
+
+    test('User Scenario 2: 3 members (Kumar pays 300, Demo settles 100, Rahul pending) -> partiallySettled', () {
+      const kumarId = 'user_kumar';
+      const demoId = 'user_demo';
+      const rahulId = 'user_rahul';
+      final members = [kumarId, demoId, rahulId];
+
+      final bill = Expense(
+        id: 'bill_kumar_300',
+        userId: kumarId,
+        groupId: 'room',
+        amount: 300.0,
+        category: 'Food',
+        description: 'Dinner by Kumar',
+        expenseDate: DateTime.now(),
+        expenseType: 'group',
+        createdAt: DateTime.now(),
+        splitType: 'equal',
+        isSettled: false,
+      );
+
+      final splits = [
+        const ExpenseSplit(id: 's1', expenseId: 'bill_kumar_300', userId: kumarId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's2', expenseId: 'bill_kumar_300', userId: demoId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's3', expenseId: 'bill_kumar_300', userId: rahulId, amountOwed: 100.0, isIncluded: true),
+      ];
+
+      // Phase 1: Only Demo settles with Kumar
+      final demoSettlement = Settlement(
+        id: 'set_demo',
+        groupId: 'room',
+        fromUserId: demoId,
+        toUserId: kumarId,
+        amount: 100.0,
+        createdAt: DateTime.now(),
+        settledExpenseIds: ['bill_kumar_300'],
+      );
+
+      final ledgerPhase1 = SettlementEngine.computeLedger(
+        memberUserIds: members,
+        expenses: [bill],
+        allSplits: splits,
+        settlements: [demoSettlement],
+      );
+
+      // Phase 1 checks:
+      expect(ledgerPhase1.isExpensePartiallySettled(bill), isTrue, reason: 'Demo paid, but Rahul is pending -> partially settled');
+      expect(ledgerPhase1.isExpenseFullySettled(bill), isFalse, reason: 'Rahul has NOT paid -> NOT fully settled');
+      expect(ledgerPhase1.isExpenseLocked(bill), isTrue, reason: 'Demo already paid -> cannot edit or delete');
+      expect(ledgerPhase1.getSettledDebtorsCount(bill), 1);
+      expect(ledgerPhase1.getTotalDebtorsCount(bill), 2);
+
+      // Phase 2: Rahul also settles with Kumar
+      final rahulSettlement = Settlement(
+        id: 'set_rahul',
+        groupId: 'room',
+        fromUserId: rahulId,
+        toUserId: kumarId,
+        amount: 100.0,
+        createdAt: DateTime.now(),
+        settledExpenseIds: ['bill_kumar_300'],
+      );
+
+      final ledgerPhase2 = SettlementEngine.computeLedger(
+        memberUserIds: members,
+        expenses: [bill],
+        allSplits: splits,
+        settlements: [demoSettlement, rahulSettlement],
+      );
+
+      // Phase 2 checks:
+      expect(ledgerPhase2.isExpenseFullySettled(bill), isTrue, reason: 'Both Demo and Rahul paid -> fully settled');
+      expect(ledgerPhase2.isExpensePartiallySettled(bill), isFalse);
+      expect(ledgerPhase2.isExpenseLocked(bill), isTrue);
+      expect(ledgerPhase2.getSettledDebtorsCount(bill), 2);
+      expect(ledgerPhase2.getTotalDebtorsCount(bill), 2);
+    });
   });
 }

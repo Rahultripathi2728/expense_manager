@@ -123,16 +123,20 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   }
 
   Color _getExpenseColor(Expense expense, Map<String, GroupBalanceData> groupBalancesMap) {
-    bool isSettled = expense.isSettled;
-    if (!isSettled && expense.isGroup && expense.groupId != null) {
+    bool isFullySettled = expense.isSettled;
+    bool isPartiallySettled = false;
+    if (!isFullySettled && expense.isGroup && expense.groupId != null) {
       final b = groupBalancesMap[expense.groupId];
       if (b != null) {
-        isSettled = b.isExpenseFullySettled(expense);
+        isFullySettled = b.isExpenseFullySettled(expense);
+        isPartiallySettled = b.isExpensePartiallySettled(expense);
       }
     }
 
-    if (isSettled) {
+    if (isFullySettled) {
       return const Color(0xFF22C55E); // Green (Settled)
+    } else if (isPartiallySettled) {
+      return const Color(0xFFEAB308); // Yellow/Amber (Partially Settled)
     } else if (expense.isGroup) {
       return const Color(0xFFF97316); // Orange (Group)
     } else {

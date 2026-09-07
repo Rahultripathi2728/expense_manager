@@ -926,7 +926,7 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage>
     GroupBalanceData? balancesData,
   ) {
     final isFully = balancesData?.isExpenseFullySettled(exp) ?? exp.isSettled;
-    final isPart = balancesData?.isExpensePartiallyOrFullySettled(exp) ?? false;
+    final isPart = balancesData?.isExpensePartiallySettled(exp) ?? false;
 
     final String badgeText;
     final Color badgeColor;

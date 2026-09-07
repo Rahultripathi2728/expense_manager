@@ -13,6 +13,7 @@ import '../../features/groups/data/group_repository.dart';
 import '../../features/groups/presentation/group_detail_page.dart';
 import '../../features/settlement/data/settlement_repository.dart';
 import '../../features/settlement/presentation/settlement_page.dart';
+import '../../features/settlement/engine/providers/group_ledger_provider.dart';
 import '../../features/calendar/presentation/widgets/calendar_expense_card.dart';
 
 class RealtimeService {
@@ -69,6 +70,7 @@ class RealtimeService {
             _ref.invalidate(userCashFlowProvider);
 
             if (groupId != null && groupId.isNotEmpty) {
+              _ref.invalidate(groupLedgerProvider(groupId));
               _ref.invalidate(groupBalancesProvider(groupId));
               _ref.invalidate(groupAllExpensesProvider(groupId));
             }
@@ -104,6 +106,7 @@ class RealtimeService {
           try {
             final groupId = doc['groupId'] as String?;
             if (groupId != null && groupId.isNotEmpty) {
+              _ref.invalidate(groupLedgerProvider(groupId));
               _ref.invalidate(groupBalancesProvider(groupId));
               _ref.invalidate(groupAllExpensesProvider(groupId));
             }
