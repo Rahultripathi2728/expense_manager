@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'app/theme/app_theme.dart';
 import 'app/theme/theme_provider.dart';
 import 'app/router/app_router.dart';
@@ -16,9 +17,62 @@ import 'core/services/push_notification_service.dart';
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     await Firebase.initializeApp();
-    debugPrint('Background message handled: ${message.messageId}');
+    debugPrint('Background message received: ${message.messageId}');
+
+    // If message already contains a system notification payload, Android system automatically renders it
+    if (message.notification != null) {
+      return;
+    }
+
+    String? title = message.data['title'] as String?;
+    String? body = message.data['body'] as String?;
+
+    if (title == null && body == null) {
+      return;
+    }
+
+    final localNotifications = FlutterLocalNotificationsPlugin();
+    const androidInitSettings = AndroidInitializationSettings('launcher_icon');
+    await localNotifications.initialize(
+      settings: const InitializationSettings(android: androidInitSettings),
+    );
+
+    const androidChannel = AndroidNotificationChannel(
+      'expense_manager_channel',
+      'Split Pro Notifications',
+      description: 'Used for expense and settlement updates.',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    final androidPlugin = localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      await androidPlugin.createNotificationChannel(androidChannel);
+    }
+
+    final notifId = (message.messageId ?? title ?? '').hashCode;
+
+    await localNotifications.show(
+      id: notifId,
+      title: title ?? 'Split Pro',
+      body: body ?? '',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          androidChannel.id,
+          androidChannel.name,
+          channelDescription: androidChannel.description,
+          icon: 'launcher_icon',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+      ),
+    );
   } catch (e) {
-    debugPrint('Background message initialization failed: $e');
+    debugPrint('Background notification display failed: $e');
   }
 }
 

@@ -239,58 +239,17 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
     );
   }
 
-  void _showEmailNoticeDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.info_outline_rounded, color: Color(0xFFF59E0B), size: 24),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Email Update Notice',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-            ),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Email update feature will be available in an upcoming update with OTP email verification.',
-              style: TextStyle(fontSize: 14.5, height: 1.45),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Currently, your email address is securely locked to protect your account and expense records.',
-              style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              textStyle: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            child: const Text('Understood'),
-          ),
-        ],
-      ),
-    );
+  void _navigateToChangeEmail() async {
+    HapticHelper.lightTap();
+    await context.push('/profile/change-email');
+    if (mounted) {
+      final updatedUser = ref.read(authStateProvider).valueOrNull;
+      if (updatedUser != null && updatedUser.email.isNotEmpty) {
+        setState(() {
+          _emailCtrl.text = updatedUser.email;
+        });
+      }
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -576,21 +535,88 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Email Field (Read-only with Info Dialog)
+                    // Email Field with Edit / Update Button
                     InkWell(
-                      onTap: _showEmailNoticeDialog,
+                      onTap: _navigateToChangeEmail,
                       borderRadius: BorderRadius.circular(12),
-                      child: IgnorePointer(
-                        child: TextFormField(
-                          controller: _emailCtrl,
-                          readOnly: true,
-                          decoration: InputDecoration(
-                            labelText: 'Email Address',
-                            prefixIcon: const Icon(Icons.email_outlined),
-                            suffixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-                            helperText: 'Tap to view email policy',
-                            helperStyle: TextStyle(color: AppColors.textTertiary, fontSize: 11),
-                          ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.borderLight),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.email_outlined, size: 20, color: AppColors.primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Email Address',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _emailCtrl.text.isNotEmpty
+                                        ? _emailCtrl.text
+                                        : (user?.email ?? 'No email set'),
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Tap to change email via 3-step security check',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.edit_rounded, size: 14, color: AppColors.primary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Edit',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),

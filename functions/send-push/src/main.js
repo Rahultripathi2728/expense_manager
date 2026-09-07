@@ -36,7 +36,26 @@ module.exports = async function (context) {
       notification.title || 'New Notification', // Title
       notification.body || '',                 // Body
       [],                                      // Topics
-      [notification.userId]                    // User Targets (Appwrite User ID)
+      [notification.userId],                   // Users
+      [],                                      // Targets
+      {
+        title: notification.title || 'New Notification',
+        body: notification.body || '',
+        type: notification.type || 'general',
+        entityId: notification.entityId || ''
+      },                                       // Data
+      '',                                      // Action
+      '',                                      // Image
+      '',                                      // Icon
+      'default',                               // Sound
+      '#2563EB',                               // Color
+      '',                                      // Tag
+      1,                                       // Badge
+      false,                                   // Draft
+      '',                                      // ScheduledAt
+      false,                                   // ContentAvailable
+      false,                                   // Critical
+      'high'                                   // Priority
     );
 
     log(`Successfully dispatched push notification to user: ${notification.userId}`);
