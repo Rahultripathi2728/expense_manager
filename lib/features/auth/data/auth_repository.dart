@@ -295,29 +295,11 @@ class AuthRepository {
     }
   }
 
-  /// Sends a 6-digit OTP code to [newEmail] to verify ownership before email change.
-  Future<String> sendEmailChangeOtp({required String newEmail}) async {
-    final token = await _account.createEmailToken(
-      userId: ID.unique(),
-      email: newEmail,
-    );
-    return token.userId;
-  }
-
-  /// Completes email change after verifying 6-digit OTP and current password.
-  Future<UserModel> completeEmailChange({
+  /// Updates user email address in Appwrite after validating current password.
+  Future<UserModel> updateEmail({
     required String newEmail,
     required String currentPassword,
-    required String tempUserId,
-    required String otpCode,
   }) async {
-    try {
-      await _account.createSession(
-        userId: tempUserId,
-        secret: otpCode,
-      );
-    } catch (_) {}
-
     final user = await _account.updateEmail(
       email: newEmail,
       password: currentPassword,
@@ -412,21 +394,13 @@ class AuthStateNotifier extends StateNotifier<AsyncValue<UserModel?>> {
     return await _repo.verifyCurrentPassword(currentPassword);
   }
 
-  Future<String> sendEmailChangeOtp({required String newEmail}) async {
-    return await _repo.sendEmailChangeOtp(newEmail: newEmail);
-  }
-
-  Future<void> completeEmailChange({
+  Future<void> updateEmail({
     required String newEmail,
     required String currentPassword,
-    required String tempUserId,
-    required String otpCode,
   }) async {
-    final user = await _repo.completeEmailChange(
+    final user = await _repo.updateEmail(
       newEmail: newEmail,
       currentPassword: currentPassword,
-      tempUserId: tempUserId,
-      otpCode: otpCode,
     );
     state = AsyncValue.data(user);
   }

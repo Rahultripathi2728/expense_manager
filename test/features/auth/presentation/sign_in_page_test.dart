@@ -40,15 +40,7 @@ class FakeAuthRepository implements AuthRepository {
   Future<bool> verifyCurrentPassword(String currentPassword) async => true;
 
   @override
-  Future<String> sendEmailChangeOtp({required String newEmail}) async => 'fake_user_id';
-
-  @override
-  Future<UserModel> completeEmailChange({
-    required String newEmail,
-    required String currentPassword,
-    required String tempUserId,
-    required String otpCode,
-  }) async {
+  Future<UserModel> updateEmail({required String newEmail, required String currentPassword}) async {
     throw UnimplementedError();
   }
 

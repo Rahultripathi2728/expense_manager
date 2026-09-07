@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,40 +14,21 @@ class ChangeEmailPage extends ConsumerStatefulWidget {
 }
 
 class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
-  // Step 0: Password verification, Step 1: New email, Step 2: OTP verification
+  // Step 0: Password verification, Step 1: New email entry & confirmation
   int _currentStep = 0;
 
   final _passwordCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
-  final _otpCtrl = TextEditingController();
 
   bool _obscurePassword = true;
   bool _loading = false;
   String? _errorMessage;
 
-  String? _tempUserId;
-  int _resendTimerSeconds = 60;
-  Timer? _timer;
-
   @override
   void dispose() {
     _passwordCtrl.dispose();
     _emailCtrl.dispose();
-    _otpCtrl.dispose();
-    _timer?.cancel();
     super.dispose();
-  }
-
-  void _startResendTimer() {
-    _timer?.cancel();
-    setState(() => _resendTimerSeconds = 60);
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_resendTimerSeconds > 0) {
-        setState(() => _resendTimerSeconds--);
-      } else {
-        _timer?.cancel();
-      }
-    });
   }
 
   Future<void> _verifyCurrentPassword() async {
@@ -87,7 +67,7 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
     }
   }
 
-  Future<void> _sendNewEmailOtp() async {
+  Future<void> _updateEmail() async {
     final newEmail = _emailCtrl.text.trim();
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     if (!emailRegex.hasMatch(newEmail)) {
@@ -108,49 +88,17 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
     HapticHelper.lightTap();
 
     try {
-      final uid = await ref.read(authStateProvider.notifier).sendEmailChangeOtp(newEmail: newEmail);
-      _tempUserId = uid;
-      _startResendTimer();
-      setState(() {
-        _currentStep = 2; // Proceed to OTP verification
-        _loading = false;
-      });
-      HapticHelper.mediumTap();
-    } catch (e) {
-      setState(() {
-        _errorMessage = ErrorFormatter.format(e);
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _completeEmailChange() async {
-    final otpCode = _otpCtrl.text.trim();
-    if (otpCode.length < 6) {
-      setState(() => _errorMessage = 'Please enter the complete 6-digit OTP');
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-    });
-    HapticHelper.lightTap();
-
-    try {
-      await ref.read(authStateProvider.notifier).completeEmailChange(
-            newEmail: _emailCtrl.text.trim(),
+      await ref.read(authStateProvider.notifier).updateEmail(
+            newEmail: newEmail,
             currentPassword: _passwordCtrl.text,
-            tempUserId: _tempUserId ?? '',
-            otpCode: otpCode,
           );
 
       if (mounted) {
         HapticHelper.mediumTap();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email updated successfully!'),
-            backgroundColor: Color(0xFF10B981),
+          SnackBar(
+            content: Text('Email updated to $newEmail successfully!'),
+            backgroundColor: const Color(0xFF10B981),
           ),
         );
         context.pop();
@@ -229,11 +177,9 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
             // Step Indicator
             Row(
               children: [
-                _buildStepPill(stepIndex: 0, title: '1. Password'),
-                const SizedBox(width: 8),
+                _buildStepPill(stepIndex: 0, title: '1. Verify Password'),
+                const SizedBox(width: 10),
                 _buildStepPill(stepIndex: 1, title: '2. New Email'),
-                const SizedBox(width: 8),
-                _buildStepPill(stepIndex: 2, title: '3. OTP Verify'),
               ],
             ),
             const SizedBox(height: 24),
@@ -301,7 +247,7 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
               ),
             ],
 
-            // STEP 1: Enter New Email
+            // STEP 1: Enter New Email & Save
             if (_currentStep == 1) ...[
               Text(
                 'Enter New Email',
@@ -309,7 +255,7 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                'We will send a 6-digit verification code to your new email to verify ownership.',
+                'Enter your new email address. Your account login email will be updated securely.',
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 16),
@@ -330,7 +276,7 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _loading ? null : _sendNewEmailOtp,
+                  onPressed: _loading ? null : _updateEmail,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -338,62 +284,16 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
                   ),
                   child: _loading
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Send Verification Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      : const Text('Update Email Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 ),
               ),
-            ],
-
-            // STEP 2: Enter OTP
-            if (_currentStep == 2) ...[
-              Text(
-                'Verify New Email',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Enter the 6-digit code sent to ${_emailCtrl.text.trim()}',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _otpCtrl,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                autofocus: true,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
-                decoration: InputDecoration(
-                  hintText: '000000',
-                  counterText: '',
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Center(
-                child: TextButton(
-                  onPressed: _resendTimerSeconds > 0 || _loading ? null : _sendNewEmailOtp,
-                  child: Text(
-                    _resendTimerSeconds > 0 ? 'Resend code in ${_resendTimerSeconds}s' : 'Resend Code',
-                    style: TextStyle(color: _resendTimerSeconds > 0 ? AppColors.textTertiary : AppColors.primary),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _completeEmailChange,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _loading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Confirm & Update Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: TextButton.icon(
+                  onPressed: _loading ? null : () => setState(() => _currentStep = 0),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                  label: const Text('Back to Password Verification'),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
                 ),
               ),
             ],
@@ -429,7 +329,7 @@ class _ChangeEmailPageState extends ConsumerState<ChangeEmailPage> {
           child: Text(
             title,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.bold,
               color: isActive
                   ? Colors.white

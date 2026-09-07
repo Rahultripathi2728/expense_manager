@@ -109,15 +109,6 @@ class ProfilePage extends ConsumerWidget {
                   const Divider(height: 1, indent: 56),
 
                   _SettingsTile(
-                    icon: Icons.mail_lock_rounded,
-                    iconColor: const Color(0xFF0EA5E9),
-                    title: 'Change Email',
-                    subtitle: user?.email ?? 'Update email address',
-                    onTap: () => context.push('/profile/change-email'),
-                  ),
-                  const Divider(height: 1, indent: 56),
-
-                  _SettingsTile(
                     icon: Icons.lock_rounded,
                     iconColor: const Color(0xFFF59E0B),
                     title: 'Change Password',
