@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
-import '../../../app/constants/app_constants.dart';
 import '../../../core/utils/date_helpers.dart';
 import '../../../shared/services/categorize_service.dart';
 import '../../../core/utils/error_formatter.dart';
@@ -17,6 +16,7 @@ import 'add_expense/add_expense_screen.dart';
 import 'utils/category_icon_helper.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../settlement/data/settlement_repository.dart';
+import '../../settlement/domain/settlement_model.dart';
 import '../../settlement/presentation/settlement_page.dart';
 import '../../groups/presentation/group_detail_page.dart';
 
@@ -495,34 +495,28 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                                     statusText = 'Paid • ${DateHelpers.formatDayMonth(expense.expenseDate)}';
                                     statusColor = const Color(0xFF10B981);
                                   } else {
-                                    bool userSettled = false;
-                                    double? remainingAmount;
-                                    if (expense.isSettled) {
-                                      userSettled = true;
-                                    } else if (balancesData != null) {
-                                      final remainingForUser = balancesData.remainingOwedPerUserPerExpense[expense.id]?[split.userId];
-                                      if (remainingForUser != null) {
-                                        remainingAmount = remainingForUser;
-                                        userSettled = remainingForUser <= AppConstants.splitEpsilon;
-                                      } else {
-                                        userSettled = balancesData.isExpenseFullySettled(expense);
+                                    bool userSettled = expense.isSettled;
+                                    Settlement? directSettlement;
+                                    if (!userSettled && balancesData != null) {
+                                      directSettlement = balancesData.getSettlementForExpenseAndDebtor(
+                                        expense.id,
+                                        split.userId,
+                                        expense.userId,
+                                      );
+                                      if (directSettlement != null) {
+                                        userSettled = true;
                                       }
                                     }
 
                                     if (userSettled) {
-                                      final settlement = balancesData?.getSettlementForExpenseAndDebtor(expense.id, split.userId, expense.userId);
-                                      if (settlement != null) {
-                                        statusText = 'Settled • ${DateHelpers.formatDayMonth(settlement.createdAt)}';
+                                      if (directSettlement != null) {
+                                        statusText = 'Settled • ${DateHelpers.formatDayMonth(directSettlement.createdAt)}';
                                       } else {
                                         statusText = 'Settled';
                                       }
                                       statusColor = const Color(0xFF10B981);
                                     } else {
-                                      if (remainingAmount != null && remainingAmount > AppConstants.splitEpsilon) {
-                                        statusText = 'Pending • ${DateHelpers.formatCurrency(remainingAmount)} due';
-                                      } else {
-                                        statusText = 'Pending';
-                                      }
+                                      statusText = 'Pending • ${DateHelpers.formatCurrency(split.amountOwed)} due';
                                       statusColor = const Color(0xFFF59E0B);
                                     }
                                   }

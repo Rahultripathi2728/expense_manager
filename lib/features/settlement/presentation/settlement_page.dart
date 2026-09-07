@@ -10,7 +10,6 @@ import '../../../app/theme/app_spacing.dart';
 import '../../../app/constants/app_constants.dart';
 import '../../../core/appwrite_client.dart';
 import '../../../core/utils/date_helpers.dart';
-import '../../../core/utils/row_helpers.dart';
 import '../../expenses/data/expense_repository.dart';
 import '../../groups/data/group_repository.dart';
 import '../data/settlement_repository.dart';
@@ -23,92 +22,34 @@ import '../../auth/data/auth_repository.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 
+import '../engine/providers/group_ledger_provider.dart';
+
 final groupBalancesProvider = FutureProvider.family<GroupBalanceData, String>((
   ref,
   groupId,
 ) async {
-  final repo = ref.watch(expenseRepositoryProvider);
-
-  // 1. Fetch group members
-  final members = await ref
-      .read(groupRepositoryProvider)
-      .getGroupMembers(groupId);
-  final userIds = members.map((m) => m.userId).toList();
-
-  if (userIds.isEmpty) {
-    return GroupBalanceData(
-      membersCount: 0,
-      unsettledExpensesCount: 0,
-      totalUnsettledAmount: 0,
-      netBalances: {},
-      paidAmounts: {},
-      shareAmounts: {},
-      transactions: [],
-      profiles: {},
-      unsettledExpenses: [],
-      splitsByExpense: {},
-      remainingOwedPerUserPerExpense: {},
-    );
-  }
-
-  // Fetch profiles for names
-  final tablesDB = ref.watch(appwriteTablesDBProvider);
-  final resProfiles = await tablesDB.listRows(
-    databaseId: AppConstants.databaseId,
-    tableId: AppConstants.profilesCollection,
-    queries: [Query.equal('userId', userIds)],
-  );
-  final profiles = resProfiles.rows
-      .map((d) => Profile.fromMap(d.dataWithId))
-      .toList();
-  final profileMap = {for (var p in profiles) p.userId: p};
-
-  // 2. Fetch group expenses & settlements
-  final allExpenses = await repo.getGroupExpenses(groupId);
-  final settlementsRepo = ref.watch(settlementRepositoryProvider);
-  final settlements = await settlementsRepo.getGroupSettlements(groupId);
-  final Settlement? lastSettlement = settlements.isNotEmpty
-      ? settlements.first
-      : null;
-
-  // 3. Fetch splits for all expenses
-  final List<ExpenseSplit> allSplits = [];
-  final Map<String, List<ExpenseSplit>> splitsByExpense = {};
-  for (final exp in allExpenses) {
-    try {
-      final splits = await repo.getExpenseSplits(exp.id);
-      splitsByExpense[exp.id] = splits;
-      allSplits.addAll(splits);
-    } catch (_) {
-      splitsByExpense[exp.id] = [];
-    }
-  }
-
-  // 4. Calculate accurate per-expense split balances using cumulative ledger
-  final calcResult = BalanceCalculator.calculateExpenseSplitBalances(
-    expenses: allExpenses,
-    allSplits: allSplits,
-    settlements: settlements,
-    memberUserIds: userIds,
-  );
+  final ledger = await ref.watch(groupLedgerProvider(groupId).future);
 
   return GroupBalanceData(
-    membersCount: userIds.length,
-    unsettledExpensesCount: calcResult.unsettledExpenses.length,
-    totalUnsettledAmount: calcResult.unsettledExpenses.fold<double>(
-      0.0,
-      (sum, e) => sum + e.amount,
-    ),
-    netBalances: calcResult.netBalances,
-    paidAmounts: calcResult.paidAmounts,
-    shareAmounts: calcResult.shareAmounts,
-    transactions: calcResult.transactions,
-    profiles: profileMap,
-    lastSettlement: lastSettlement,
-    unsettledExpenses: calcResult.unsettledExpenses,
-    splitsByExpense: splitsByExpense,
-    remainingOwedPerUserPerExpense: calcResult.remainingOwedPerUserPerExpense,
-    settlements: settlements,
+    membersCount: ledger.membersCount,
+    unsettledExpensesCount: ledger.unsettledExpensesCount,
+    totalUnsettledAmount: ledger.totalUnsettledAmount,
+    netBalances: ledger.netBalances,
+    paidAmounts: ledger.billsPaidByMember,
+    shareAmounts: ledger.billShareByMember,
+    transactions: ledger.transactions
+        .map((t) => SimplifiedTransaction(
+              fromUserId: t.fromUserId,
+              toUserId: t.toUserId,
+              amount: t.amount,
+            ))
+        .toList(),
+    profiles: ledger.profiles,
+    lastSettlement: ledger.lastSettlement,
+    unsettledExpenses: ledger.unsettledExpenses,
+    splitsByExpense: ledger.splitsByExpense,
+    remainingOwedPerUserPerExpense: {},
+    settlements: ledger.settlements,
   );
 });
 
@@ -157,32 +98,18 @@ class GroupBalanceData {
     this.settlements = const [],
   });
 
-  /// An expense is ONLY fully settled when marked settled in DB or ALL included split members have 0 remaining debt.
+  /// An expense is ONLY fully settled when marked settled in DB or an actual settlement references it.
   bool isExpenseFullySettled(Expense expense) {
     if (expense.isSettled) return true;
-    final remainingMap = remainingOwedPerUserPerExpense[expense.id];
-    if (remainingMap == null || remainingMap.isEmpty) return false;
-    return remainingMap.values.every((val) => val <= AppConstants.splitEpsilon);
+    return settlements.any((s) => s.settledExpenseIds.contains(expense.id));
   }
 
-  /// Whether ANY member has paid their share against this expense (partial or full).
-  /// If true, this expense is locked and cannot be deleted or edited!
+  /// Whether ANY member has paid their share against this expense.
+  /// Golden Rule: Only real recorded settlements in DB lock an expense!
+  /// Adding other bills or having positive balances NEVER locks an expense!
   bool isExpensePartiallyOrFullySettled(Expense expense) {
     if (expense.isSettled) return true;
-    if (settlements.any((s) => s.settledExpenseIds.contains(expense.id))) return true;
-    final remainingMap = remainingOwedPerUserPerExpense[expense.id];
-    if (remainingMap != null) {
-      final splits = splitsByExpense[expense.id] ?? [];
-      for (final s in splits) {
-        if (s.userId != expense.userId && s.isIncluded) {
-          final rem = remainingMap[s.userId] ?? s.amountOwed;
-          if (rem < s.amountOwed - AppConstants.splitEpsilon) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
+    return settlements.any((s) => s.settledExpenseIds.contains(expense.id));
   }
 
   /// Get the settlement recorded specifically for a debtor paying the payer for an expense
