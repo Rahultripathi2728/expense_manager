@@ -18,6 +18,7 @@ import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../../shared/widgets/custom_error_widget.dart';
 import '../../../core/services/cache_service.dart';
 import 'export/statement_export_screen.dart';
+import 'utils/category_icon_helper.dart';
 
 // Providers to track active states
 final expensesTabProvider = StateProvider<int>((ref) => 0);
@@ -775,12 +776,14 @@ class _MyExpensesTab extends ConsumerWidget {
                     ),
                     data: (cashFlow) {
                       final allActivities = cashFlow.activities;
-                      final expensesActivities = allActivities.where((a) => a.type == CashFlowType.expense).toList();
+                      final paidByMeActivities = allActivities.where((a) => a.isPaidByMe).toList();
+                      final myShareActivities = allActivities.where((a) => a.type == CashFlowType.expense && !a.isPaidByMe).toList();
                       final receivedActivities = allActivities.where((a) => a.type == CashFlowType.settlementReceived).toList();
                       final paidActivities = allActivities.where((a) => a.type == CashFlowType.settlementPaid).toList();
 
                       final filteredActivities = allActivities.where((a) {
-                        if (activeCashFlowFilter == 'expense') return a.type == CashFlowType.expense;
+                        if (activeCashFlowFilter == 'paid_by_me') return a.isPaidByMe;
+                        if (activeCashFlowFilter == 'my_share') return a.type == CashFlowType.expense && !a.isPaidByMe;
                         if (activeCashFlowFilter == 'received') return a.type == CashFlowType.settlementReceived;
                         if (activeCashFlowFilter == 'paid') return a.type == CashFlowType.settlementPaid;
                         return true;
@@ -870,18 +873,18 @@ class _MyExpensesTab extends ConsumerWidget {
                           // 4 Interactive Metric Cards Grid
                           Row(
                             children: [
-                              // Total Spent
+                              // Total Out-of-Pocket Paid
                               Expanded(
                                 child: _buildMetricCard(
-                                  title: 'TOTAL SPENT',
-                                  amount: cashFlow.totalSpent,
+                                  title: 'TOTAL PAID (POCKET)',
+                                  amount: cashFlow.totalOutOfPocketPaid,
                                   color: AppColors.primary,
-                                  icon: Icons.receipt_long_rounded,
-                                  isSelected: activeCashFlowFilter == 'expense',
+                                  icon: Icons.payments_rounded,
+                                  isSelected: activeCashFlowFilter == 'paid_by_me',
                                   onTap: () {
                                     HapticHelper.selectionClick();
                                     ref.read(cashFlowFilterTabProvider.notifier).state =
-                                        activeCashFlowFilter == 'expense' ? 'all' : 'expense';
+                                        activeCashFlowFilter == 'paid_by_me' ? 'all' : 'paid_by_me';
                                   },
                                 ),
                               ),
@@ -910,7 +913,7 @@ class _MyExpensesTab extends ConsumerWidget {
                               // Paid Out (-)
                               Expanded(
                                 child: _buildMetricCard(
-                                  title: 'PAID OUT (-)',
+                                  title: 'PAID TO FRIENDS (-)',
                                   amount: cashFlow.totalPaidOut,
                                   color: const Color(0xFFEF4444),
                                   icon: Icons.arrow_upward_rounded,
@@ -953,7 +956,9 @@ class _MyExpensesTab extends ConsumerWidget {
                               children: [
                                 _buildFilterChip(ref, 'all', 'All Activity (${allActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
-                                _buildFilterChip(ref, 'expense', '🧾 Expenses (${expensesActivities.length})', activeCashFlowFilter),
+                                _buildFilterChip(ref, 'paid_by_me', '💳 Paid by You (${paidByMeActivities.length})', activeCashFlowFilter),
+                                const SizedBox(width: 8),
+                                _buildFilterChip(ref, 'my_share', '👥 My Share (${myShareActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
                                 _buildFilterChip(ref, 'received', '🟢 Received (${receivedActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
@@ -983,7 +988,7 @@ class _MyExpensesTab extends ConsumerWidget {
                             ListView.separated(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
-                              itemCount: filteredActivities.length > 8 ? 8 : filteredActivities.length,
+                              itemCount: filteredActivities.length,
                               separatorBuilder: (_, __) => const SizedBox(height: 8),
                               itemBuilder: (context, idx) {
                                 final item = filteredActivities[idx];
@@ -1111,26 +1116,46 @@ class _MyExpensesTab extends ConsumerWidget {
     final isExpense = item.type == CashFlowType.expense;
     final isReceived = item.type == CashFlowType.settlementReceived;
 
-    Color badgeColor;
-    IconData badgeIcon;
-    String sign;
-    Color amountColor;
+    final String amountText;
+    final Color amountColor;
+    final String tagText;
+    final Color tagBgColor;
+    final Color tagTextColor;
 
     if (isExpense) {
-      badgeColor = AppColors.primary;
-      badgeIcon = Icons.receipt_long_rounded;
-      sign = '-';
-      amountColor = AppColors.textPrimary;
+      if (item.isPaidByMe) {
+        if (item.groupName == 'Personal') {
+          amountText = '-${DateHelpers.formatCurrency(item.amount)}';
+          amountColor = AppColors.textPrimary;
+          tagText = 'Personal';
+          tagBgColor = const Color(0xFF10B981).withValues(alpha: 0.12);
+          tagTextColor = const Color(0xFF10B981);
+        } else {
+          amountText = '-${DateHelpers.formatCurrency(item.totalBillAmount > 0 ? item.totalBillAmount : item.amount)}';
+          amountColor = const Color(0xFFEF4444);
+          tagText = 'You Paid Full';
+          tagBgColor = AppColors.primary.withValues(alpha: 0.12);
+          tagTextColor = AppColors.primary;
+        }
+      } else {
+        amountText = DateHelpers.formatCurrency(item.myShareAmount > 0 ? item.myShareAmount : item.amount);
+        amountColor = const Color(0xFFD97706); // Amber
+        tagText = 'Your Share';
+        tagBgColor = const Color(0xFFFEF3C7);
+        tagTextColor = const Color(0xFFD97706);
+      }
     } else if (isReceived) {
-      badgeColor = const Color(0xFF10B981);
-      badgeIcon = Icons.arrow_downward_rounded;
-      sign = '+';
+      amountText = '+${DateHelpers.formatCurrency(item.amount)}';
       amountColor = const Color(0xFF10B981);
+      tagText = 'Received';
+      tagBgColor = const Color(0xFFDCFCE7);
+      tagTextColor = const Color(0xFF16A34A);
     } else {
-      badgeColor = const Color(0xFFEF4444);
-      badgeIcon = Icons.arrow_upward_rounded;
-      sign = '-';
+      amountText = '-${DateHelpers.formatCurrency(item.amount)}';
       amountColor = const Color(0xFFEF4444);
+      tagText = 'Paid Out';
+      tagBgColor = const Color(0xFFFEE2E2);
+      tagTextColor = const Color(0xFFDC2626);
     }
 
     return InkWell(
@@ -1140,29 +1165,39 @@ class _MyExpensesTab extends ConsumerWidget {
           context.push('/expense-detail', extra: item.originalObject as Expense);
         }
       },
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.borderLight),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: badgeColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: badgeColor.withValues(alpha: 0.25)),
+            // Left Icon
+            if (isExpense)
+              CategoryIconHelper.buildBadge(item.category ?? 'Other', size: 42, iconSize: 20)
+            else
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: isReceived
+                      ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                      : const Color(0xFFEF4444).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  isReceived ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                  color: isReceived ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                  size: 20,
+                ),
               ),
-              child: Center(
-                child: Icon(badgeIcon, color: badgeColor, size: 18),
-              ),
-            ),
             const SizedBox(width: 12),
+
+            // Middle Column: Title & Metadata
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1177,52 +1212,98 @@ class _MyExpensesTab extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Text(
-                        isExpense
-                            ? 'Paid by ${item.payerName ?? 'You'}'
-                            : (item.subtitle ?? ''),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
+                  const SizedBox(height: 4),
+
+                  // Subtitle info
+                  if (isExpense) ...[
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            item.groupName ?? 'Personal',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '• ${DateHelpers.formatDayMonth(item.date)}',
-                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(4),
+                        Text(
+                          ' • ${DateHelpers.formatDayMonth(item.date)}',
+                          style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
                         ),
+                      ],
+                    ),
+                    if (item.groupName != 'Personal')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          item.groupName ?? 'General',
+                          item.isPaidByMe
+                              ? 'Your share: ${DateHelpers.formatCurrency(item.myShareAmount)}'
+                              : 'Paid by ${item.payerName ?? 'Member'}',
                           style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            color: item.isPaidByMe ? AppColors.primary : AppColors.textTertiary,
+                            fontWeight: item.isPaidByMe ? FontWeight.w600 : FontWeight.normal,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            item.subtitle ?? 'Settlement',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          ' • ${DateHelpers.formatDayMonth(item.date)}',
+                          style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
-            Text(
-              '$sign${DateHelpers.formatCurrency(item.amount)}',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: amountColor,
-              ),
+            const SizedBox(width: 8),
+
+            // Right Column: Amount & Tag Pill
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  amountText,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: amountColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: tagBgColor,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    tagText,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: tagTextColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

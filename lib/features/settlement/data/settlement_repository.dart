@@ -27,6 +27,9 @@ class CashFlowActivityItem {
   final String? category;
   final String? payerName;
   final dynamic originalObject;
+  final double totalBillAmount;
+  final double myShareAmount;
+  final bool isPaidByMe;
 
   CashFlowActivityItem({
     required this.id,
@@ -39,22 +42,27 @@ class CashFlowActivityItem {
     this.category,
     this.payerName,
     this.originalObject,
+    this.totalBillAmount = 0.0,
+    this.myShareAmount = 0.0,
+    this.isPaidByMe = false,
   });
 }
 
 class CashFlowSummaryData {
-  final double totalSpent;
+  final double totalSpent; // Net consumption (Personal + My Share) for budget tracking
+  final double totalOutOfPocketPaid; // Actual cash paid by user (Bills paid + Settlements paid)
   final double personalSpent;
   final double groupShareSpent;
-  final double totalReceived;
-  final double totalPaidOut;
-  final double netCashFlow;
+  final double totalReceived; // Settlements received from friends
+  final double totalPaidOut; // Settlements paid out to friends
+  final double netCashFlow; // Inflow vs Outflow
   final List<CashFlowActivityItem> activities;
   final List<Settlement> settlementsReceived;
   final List<Settlement> settlementsPaid;
 
   CashFlowSummaryData({
     required this.totalSpent,
+    this.totalOutOfPocketPaid = 0.0,
     required this.personalSpent,
     required this.groupShareSpent,
     required this.totalReceived,
@@ -67,6 +75,7 @@ class CashFlowSummaryData {
 
   factory CashFlowSummaryData.empty() => CashFlowSummaryData(
         totalSpent: 0,
+        totalOutOfPocketPaid: 0,
         personalSpent: 0,
         groupShareSpent: 0,
         totalReceived: 0,
@@ -369,6 +378,7 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   // Calculate expense spending
   double personalSpent = 0.0;
   double groupShareSpent = 0.0;
+  double totalOutOfPocketPaid = 0.0;
 
   final List<CashFlowActivityItem> activities = [];
 
@@ -379,6 +389,7 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
 
     if (isPersonal && isMine) {
       personalSpent += e.amount;
+      totalOutOfPocketPaid += e.amount;
       activities.add(
         CashFlowActivityItem(
           id: e.id,
@@ -391,24 +402,55 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
           category: e.category,
           payerName: 'You',
           originalObject: e,
+          totalBillAmount: e.amount,
+          myShareAmount: e.amount,
+          isPaidByMe: true,
         ),
       );
     } else if (!isPersonal) {
       final myShare = splitMap[e.id] ?? (isMine ? e.amount : 0.0);
-      if (myShare > 0) {
-        groupShareSpent += myShare;
+      groupShareSpent += myShare;
+
+      if (isMine) {
+        // Current user paid the full bill at the counter!
+        totalOutOfPocketPaid += e.amount;
+        final friendsOwe = e.amount - myShare;
         activities.add(
           CashFlowActivityItem(
             id: e.id,
             type: CashFlowType.expense,
             title: e.description,
-            subtitle: 'Group Expense (Share: ₹${myShare.toStringAsFixed(0)})',
+            subtitle: friendsOwe > 0
+                ? 'Group: ${groupMap[e.groupId] ?? 'Group'} • Paid full bill (Your share: ₹${myShare.toStringAsFixed(0)})'
+                : 'Group: ${groupMap[e.groupId] ?? 'Group'} • Paid full bill',
+            groupName: groupMap[e.groupId] ?? 'Group',
+            amount: e.amount,
+            date: e.expenseDate,
+            category: e.category,
+            payerName: 'You',
+            originalObject: e,
+            totalBillAmount: e.amount,
+            myShareAmount: myShare,
+            isPaidByMe: true,
+          ),
+        );
+      } else if (myShare > 0) {
+        // Someone else paid at the counter, current user is a participant
+        activities.add(
+          CashFlowActivityItem(
+            id: e.id,
+            type: CashFlowType.expense,
+            title: e.description,
+            subtitle: 'Group: ${groupMap[e.groupId] ?? 'Group'} • Paid by $payerName (Bill: ₹${e.amount.toStringAsFixed(0)})',
             groupName: groupMap[e.groupId] ?? 'Group',
             amount: myShare,
             date: e.expenseDate,
             category: e.category,
             payerName: payerName,
             originalObject: e,
+            totalBillAmount: e.amount,
+            myShareAmount: myShare,
+            isPaidByMe: false,
           ),
         );
       }
@@ -425,13 +467,16 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
         id: s.id,
         type: CashFlowType.settlementReceived,
         title: 'Received from $fromName',
-        subtitle: 'Settlement Payment',
+        subtitle: 'Settlement • ${groupMap[s.groupId] ?? 'Group'}',
         groupName: groupMap[s.groupId] ?? 'Group',
         amount: s.amount,
         date: s.createdAt,
         category: 'settled',
         payerName: fromName,
         originalObject: s,
+        totalBillAmount: s.amount,
+        myShareAmount: s.amount,
+        isPaidByMe: false,
       ),
     );
   }
@@ -440,19 +485,23 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   double totalPaidOut = 0.0;
   for (final s in settlementsPaid) {
     totalPaidOut += s.amount;
+    totalOutOfPocketPaid += s.amount;
     final toName = profileNames[s.toUserId] ?? 'Group Member';
     activities.add(
       CashFlowActivityItem(
         id: s.id,
         type: CashFlowType.settlementPaid,
         title: 'Paid to $toName',
-        subtitle: 'Settlement Payment',
+        subtitle: 'Settlement • ${groupMap[s.groupId] ?? 'Group'}',
         groupName: groupMap[s.groupId] ?? 'Group',
         amount: s.amount,
         date: s.createdAt,
         category: 'settled',
         payerName: 'You',
         originalObject: s,
+        totalBillAmount: s.amount,
+        myShareAmount: s.amount,
+        isPaidByMe: true,
       ),
     );
   }
@@ -461,11 +510,12 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   activities.sort((a, b) => b.date.compareTo(a.date));
 
   final totalSpent = personalSpent + groupShareSpent;
-  // Net cash flow = Received - (Spent + PaidOut)
-  final netCashFlow = totalReceived - (totalSpent + totalPaidOut);
+  // Net cash flow = Total Received - Total Out-Of-Pocket Paid
+  final netCashFlow = totalReceived - totalOutOfPocketPaid;
 
   return CashFlowSummaryData(
     totalSpent: totalSpent,
+    totalOutOfPocketPaid: totalOutOfPocketPaid,
     personalSpent: personalSpent,
     groupShareSpent: groupShareSpent,
     totalReceived: totalReceived,
