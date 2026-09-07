@@ -54,6 +54,41 @@ class _UpdateDialogState extends State<UpdateDialog> {
     });
 
     try {
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/expense_manager_update_${widget.updateInfo.latestVersion}.apk';
+      final file = File(filePath);
+
+      // Check if file is already completely downloaded from previous attempt
+      if (await file.exists()) {
+        final existingLength = await file.length();
+        if (existingLength > 15 * 1024 * 1024) { // Valid APK size (>15MB)
+          if (mounted) {
+            setState(() {
+              _statusMessage = 'Update already downloaded. Opening installer...';
+              _downloadProgress = 100.0;
+            });
+          }
+          final result = await OpenFilex.open(
+            filePath,
+            type: 'application/vnd.android.package-archive',
+          );
+          if (mounted) {
+            setState(() {
+              _isDownloading = false;
+              if (result.type != ResultType.done) {
+                _errorMessage = 'Failed to launch installer: ${result.message}\nPlease enable "Install unknown apps" in Settings.';
+              } else {
+                _statusMessage = 'Installation initiated.';
+              }
+            });
+          }
+          return;
+        } else {
+          // Incomplete file, delete and re-download
+          await file.delete();
+        }
+      }
+
       final client = http.Client();
       final request = http.Request('GET', Uri.parse(widget.updateInfo.apkUrl!));
       final response = await client.send(request);
@@ -64,10 +99,6 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
       final contentLength = response.contentLength ?? 0;
       var receivedBytes = 0;
-
-      final tempDir = await getTemporaryDirectory();
-      final filePath = '${tempDir.path}/expense_manager_update_${widget.updateInfo.latestVersion}.apk';
-      final file = File(filePath);
       final sink = file.openWrite();
 
       await for (var chunk in response.stream) {
