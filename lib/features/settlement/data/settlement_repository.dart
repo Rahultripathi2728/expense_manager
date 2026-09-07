@@ -49,18 +49,20 @@ class CashFlowActivityItem {
 }
 
 class CashFlowSummaryData {
+  final double totalExpensesVolume; // Total volume of all bills/expenses (personal + group bills)
   final double totalSpent; // Net consumption (Personal + My Share) for budget tracking
   final double totalOutOfPocketPaid; // Actual cash paid by user (Bills paid + Settlements paid)
   final double personalSpent;
   final double groupShareSpent;
   final double totalReceived; // Settlements received from friends
   final double totalPaidOut; // Settlements paid out to friends
-  final double netCashFlow; // Inflow vs Outflow
+  final double netCashFlow; // Inflow vs Outflow / True Net Cost
   final List<CashFlowActivityItem> activities;
   final List<Settlement> settlementsReceived;
   final List<Settlement> settlementsPaid;
 
   CashFlowSummaryData({
+    this.totalExpensesVolume = 0.0,
     required this.totalSpent,
     this.totalOutOfPocketPaid = 0.0,
     required this.personalSpent,
@@ -74,6 +76,7 @@ class CashFlowSummaryData {
   });
 
   factory CashFlowSummaryData.empty() => CashFlowSummaryData(
+        totalExpensesVolume: 0,
         totalSpent: 0,
         totalOutOfPocketPaid: 0,
         personalSpent: 0,
@@ -379,10 +382,12 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   double personalSpent = 0.0;
   double groupShareSpent = 0.0;
   double totalOutOfPocketPaid = 0.0;
+  double totalExpensesVolume = 0.0;
 
   final List<CashFlowActivityItem> activities = [];
 
   for (final e in expenses) {
+    totalExpensesVolume += e.amount;
     final isPersonal = e.groupId == null || e.groupId!.isEmpty;
     final isMine = e.userId == myUserId;
     final payerName = isMine ? 'You' : (profileNames[e.userId] ?? 'Member');
@@ -510,10 +515,11 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   activities.sort((a, b) => b.date.compareTo(a.date));
 
   final totalSpent = personalSpent + groupShareSpent;
-  // Net cash flow = Total Received - Total Out-Of-Pocket Paid
-  final netCashFlow = totalReceived - totalOutOfPocketPaid;
+  // Net cash flow: when all settlements clear, the true net cost to the user is (Personal + My Share)
+  final netCashFlow = totalSpent;
 
   return CashFlowSummaryData(
+    totalExpensesVolume: totalExpensesVolume,
     totalSpent: totalSpent,
     totalOutOfPocketPaid: totalOutOfPocketPaid,
     personalSpent: personalSpent,

@@ -776,18 +776,25 @@ class _MyExpensesTab extends ConsumerWidget {
                     ),
                     data: (cashFlow) {
                       final allActivities = cashFlow.activities;
-                      final paidByMeActivities = allActivities.where((a) => a.isPaidByMe).toList();
-                      final myShareActivities = allActivities.where((a) => a.type == CashFlowType.expense && !a.isPaidByMe).toList();
+                      final expensesActivities = allActivities.where((a) => a.type == CashFlowType.expense).toList();
                       final receivedActivities = allActivities.where((a) => a.type == CashFlowType.settlementReceived).toList();
                       final paidActivities = allActivities.where((a) => a.type == CashFlowType.settlementPaid).toList();
 
                       final filteredActivities = allActivities.where((a) {
-                        if (activeCashFlowFilter == 'paid_by_me') return a.isPaidByMe;
-                        if (activeCashFlowFilter == 'my_share') return a.type == CashFlowType.expense && !a.isPaidByMe;
+                        if (activeCashFlowFilter == 'expense') return a.type == CashFlowType.expense;
                         if (activeCashFlowFilter == 'received') return a.type == CashFlowType.settlementReceived;
                         if (activeCashFlowFilter == 'paid') return a.type == CashFlowType.settlementPaid;
                         return true;
                       }).toList();
+
+                      // Group activities by Day (Date-wise)
+                      final Map<String, List<CashFlowActivityItem>> groupedActivities = {};
+                      for (final item in filteredActivities) {
+                        final dateKey = DateFormat('yyyy-MM-dd').format(item.date);
+                        groupedActivities.putIfAbsent(dateKey, () => []).add(item);
+                      }
+                      final sortedDateKeys = groupedActivities.keys.toList()
+                        ..sort((a, b) => b.compareTo(a));
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,18 +880,20 @@ class _MyExpensesTab extends ConsumerWidget {
                           // 4 Interactive Metric Cards Grid
                           Row(
                             children: [
-                              // Total Out-of-Pocket Paid
+                              // Total Expenses Volume
                               Expanded(
                                 child: _buildMetricCard(
-                                  title: 'TOTAL PAID (POCKET)',
-                                  amount: cashFlow.totalOutOfPocketPaid,
+                                  title: 'TOTAL',
+                                  amount: cashFlow.totalExpensesVolume > 0
+                                      ? cashFlow.totalExpensesVolume
+                                      : cashFlow.totalSpent,
                                   color: AppColors.primary,
-                                  icon: Icons.payments_rounded,
-                                  isSelected: activeCashFlowFilter == 'paid_by_me',
+                                  icon: Icons.receipt_long_rounded,
+                                  isSelected: activeCashFlowFilter == 'expense',
                                   onTap: () {
                                     HapticHelper.selectionClick();
                                     ref.read(cashFlowFilterTabProvider.notifier).state =
-                                        activeCashFlowFilter == 'paid_by_me' ? 'all' : 'paid_by_me';
+                                        activeCashFlowFilter == 'expense' ? 'all' : 'expense';
                                   },
                                 ),
                               ),
@@ -913,7 +922,7 @@ class _MyExpensesTab extends ConsumerWidget {
                               // Paid Out (-)
                               Expanded(
                                 child: _buildMetricCard(
-                                  title: 'PAID TO FRIENDS (-)',
+                                  title: 'PAID (-)',
                                   amount: cashFlow.totalPaidOut,
                                   color: const Color(0xFFEF4444),
                                   icon: Icons.arrow_upward_rounded,
@@ -927,17 +936,15 @@ class _MyExpensesTab extends ConsumerWidget {
                               ),
                               const SizedBox(width: 10),
 
-                              // Net Cash Flow
+                              // Net Cash Flow (Personal + My Share)
                               Expanded(
                                 child: _buildMetricCard(
                                   title: 'NET CASH FLOW',
                                   amount: cashFlow.netCashFlow,
-                                  color: cashFlow.netCashFlow >= 0
-                                      ? const Color(0xFF10B981)
-                                      : const Color(0xFFEF4444),
-                                  icon: Icons.swap_vert_rounded,
+                                  color: const Color(0xFF10B981),
+                                  icon: Icons.account_balance_wallet_rounded,
                                   isSelected: activeCashFlowFilter == 'all',
-                                  isNet: true,
+                                  isNet: false,
                                   onTap: () {
                                     HapticHelper.selectionClick();
                                     ref.read(cashFlowFilterTabProvider.notifier).state = 'all';
@@ -956,19 +963,17 @@ class _MyExpensesTab extends ConsumerWidget {
                               children: [
                                 _buildFilterChip(ref, 'all', 'All Activity (${allActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
-                                _buildFilterChip(ref, 'paid_by_me', '💳 Paid by You (${paidByMeActivities.length})', activeCashFlowFilter),
-                                const SizedBox(width: 8),
-                                _buildFilterChip(ref, 'my_share', '👥 My Share (${myShareActivities.length})', activeCashFlowFilter),
+                                _buildFilterChip(ref, 'expense', '🧾 Expenses (${expensesActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
                                 _buildFilterChip(ref, 'received', '🟢 Received (${receivedActivities.length})', activeCashFlowFilter),
                                 const SizedBox(width: 8),
-                                _buildFilterChip(ref, 'paid', '🔴 Paid Out (${paidActivities.length})', activeCashFlowFilter),
+                                _buildFilterChip(ref, 'paid', '🔴 Paid (${paidActivities.length})', activeCashFlowFilter),
                               ],
                             ),
                           ),
                           const SizedBox(height: 14),
 
-                          // Activity List (Consolidated Feed)
+                          // Activity List (Consolidated Feed with Day-wise Headers)
                           if (filteredActivities.isEmpty)
                             Container(
                               width: double.infinity,
@@ -985,14 +990,60 @@ class _MyExpensesTab extends ConsumerWidget {
                               ),
                             )
                           else
-                            ListView.separated(
+                            ListView.builder(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
-                              itemCount: filteredActivities.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 8),
-                              itemBuilder: (context, idx) {
-                                final item = filteredActivities[idx];
-                                return _buildActivityRow(context, item);
+                              itemCount: sortedDateKeys.length,
+                              itemBuilder: (context, groupIdx) {
+                                final dateKey = sortedDateKeys[groupIdx];
+                                final dayItems = groupedActivities[dateKey] ?? [];
+                                final firstDate = dayItems.first.date;
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Day Header
+                                    Padding(
+                                      padding: EdgeInsets.only(top: groupIdx == 0 ? 4 : 14, bottom: 8),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.calendar_today_rounded,
+                                            size: 13,
+                                            color: AppColors.primary,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            _formatDayHeader(firstDate),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppColors.textSecondary,
+                                              letterSpacing: 0.2,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Divider(
+                                              color: AppColors.borderLight,
+                                              height: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Day Items
+                                    ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: dayItems.length,
+                                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                      itemBuilder: (context, idx) {
+                                        return _buildActivityRow(context, dayItems[idx]);
+                                      },
+                                    ),
+                                  ],
+                                );
                               },
                             ),
                         ],
@@ -1007,6 +1058,17 @@ class _MyExpensesTab extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _formatDayHeader(DateTime date) {
+    if (DateHelpers.isToday(date)) {
+      return 'Today • ${DateHelpers.formatDayMonth(date)}';
+    }
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    if (DateHelpers.isSameDay(date, yesterday)) {
+      return 'Yesterday • ${DateHelpers.formatDayMonth(date)}';
+    }
+    return DateHelpers.formatFullDate(date);
   }
 
   Widget _buildMetricCard({
