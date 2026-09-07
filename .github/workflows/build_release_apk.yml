@@ -56,4 +56,4 @@ jobs:
       - name: Upload APK to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} build/app/outputs/flutter-apk/expense-manager-${{ github.event.release.tag_name }}.apk
+        run: gh release upload ${{ github.event.release.tag_name }} build/app/outputs/flutter-apk/expense-manager-${{ github.event.release.tag_name }}.apk --clobber
