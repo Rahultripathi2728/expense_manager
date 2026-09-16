@@ -995,7 +995,7 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage>
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Paid by ${payer?.fullName ?? 'Member'} • ${DateHelpers.formatDayMonth(exp.expenseDate)}',
+                        'Paid by ${payer?.fullName.split(' ').first ?? 'Member'} • ${DateHelpers.formatDayMonth(exp.expenseDate)}',
                         style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                       ),
                     ],
@@ -1043,8 +1043,8 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage>
     Profile? fromProfile,
     Profile? toProfile,
   ) {
-    final fromName = fromProfile?.fullName.trim().isNotEmpty == true ? fromProfile!.fullName : 'Member';
-    final toName = toProfile?.fullName.trim().isNotEmpty == true ? toProfile!.fullName : 'Member';
+    final fromName = fromProfile?.fullName.trim().isNotEmpty == true ? fromProfile!.fullName.split(' ').first : 'Member';
+    final toName = toProfile?.fullName.trim().isNotEmpty == true ? toProfile!.fullName.split(' ').first : 'Member';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1528,6 +1528,8 @@ class _GroupDetailPageState extends ConsumerState<GroupDetailPage>
                                 Text(
                                   prof.userId == myUserId ? '${prof.fullName} (You)' : prof.fullName,
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
                                   isMemberAdmin ? 'Admin' : 'Member',

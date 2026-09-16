@@ -9,6 +9,9 @@ import '../domain/settlement_model.dart';
 import '../../expenses/data/expense_repository.dart';
 import '../../expenses/domain/expense_model.dart';
 import '../../expenses/domain/expense_split_model.dart';
+import 'package:go_router/go_router.dart';
+import '../data/settlement_repository.dart';
+import '../../profile/data/profile_repository.dart';
 import '../../expenses/presentation/utils/category_icon_helper.dart';
 
 class SettlementHistoryDetailPage extends ConsumerStatefulWidget {
@@ -152,39 +155,47 @@ class _SettlementHistoryDetailPageState extends ConsumerState<SettlementHistoryD
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               // Payer
-                              Column(
-                                children: [
-                                  Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [AppColors.primary, const Color(0xFF41A5FF)],
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [AppColors.primary, const Color(0xFF41A5FF)],
+                                        ),
+                                        shape: BoxShape.circle,
                                       ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        widget.fromName.isNotEmpty ? widget.fromName[0].toUpperCase() : 'U',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
+                                      child: Center(
+                                        child: Text(
+                                          widget.fromName.isNotEmpty ? widget.fromName[0].toUpperCase() : 'U',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 20,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(widget.fromName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                  Text('Payer', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
-                                ],
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      widget.fromName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    Text('Payer', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+                                  ],
+                                ),
                               ),
 
                               // Amount & Arrow
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
                                 child: Column(
                                   children: [
                                     Text(
@@ -211,7 +222,7 @@ class _SettlementHistoryDetailPageState extends ConsumerState<SettlementHistoryD
                                       style: TextStyle(
                                         color: AppColors.primary,
                                         fontWeight: FontWeight.w800,
-                                        fontSize: 20,
+                                        fontSize: 18,
                                       ),
                                     ),
                                   ],
@@ -219,34 +230,42 @@ class _SettlementHistoryDetailPageState extends ConsumerState<SettlementHistoryD
                               ),
 
                               // Recipient
-                              Column(
-                                children: [
-                                  Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: const BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [Color(0xFF8B5CF6), Color(0xFFC084FC)],
+                                        ),
+                                        shape: BoxShape.circle,
                                       ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        widget.toName.isNotEmpty ? widget.toName[0].toUpperCase() : 'U',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
+                                      child: Center(
+                                        child: Text(
+                                          widget.toName.isNotEmpty ? widget.toName[0].toUpperCase() : 'U',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 20,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(widget.toName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                  Text('Receiver', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
-                                ],
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      widget.toName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    Text('Receiver', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -356,34 +375,41 @@ class _SettlementHistoryDetailPageState extends ConsumerState<SettlementHistoryD
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primary.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          "${widget.fromName}'s Share",
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.primary,
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        Flexible(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              "${widget.fromName.split(' ').first}'s Share",
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: AppColors.primary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '₹${fromOwed.toStringAsFixed(2)}',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.textPrimary,
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '₹${fromOwed.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.textPrimary,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
@@ -407,6 +433,228 @@ class _SettlementHistoryDetailPageState extends ConsumerState<SettlementHistoryD
                       }),
                   ],
                 ),
+    );
+  }
+}
+
+class SettlementHistoryDetailLoaderPage extends ConsumerStatefulWidget {
+  final String settlementId;
+  final String? fromName;
+  final String? toName;
+
+  const SettlementHistoryDetailLoaderPage({
+    super.key,
+    required this.settlementId,
+    this.fromName,
+    this.toName,
+  });
+
+  @override
+  ConsumerState<SettlementHistoryDetailLoaderPage> createState() =>
+      _SettlementHistoryDetailLoaderPageState();
+}
+
+class _SettlementHistoryDetailLoaderPageState
+    extends ConsumerState<SettlementHistoryDetailLoaderPage> {
+  Settlement? _settlement;
+  String _fromName = '';
+  String _toName = '';
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final repo = ref.read(settlementRepositoryProvider);
+      final s = await repo.getSettlementById(widget.settlementId);
+      if (s == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      String from = widget.fromName ?? '';
+      String to = widget.toName ?? '';
+
+      if (from.isEmpty || to.isEmpty) {
+        final profileRepo = ref.read(profileRepositoryProvider);
+        if (from.isEmpty) {
+          final p = await profileRepo.getProfile(s.fromUserId);
+          from = p?.fullName ?? 'Member';
+        }
+        if (to.isEmpty) {
+          final p = await profileRepo.getProfile(s.toUserId);
+          to = p?.fullName ?? 'Member';
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _settlement = s;
+          _fromName = from;
+          _toName = to;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/calendar');
+              }
+            },
+          ),
+          title: Text('Settlement Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/calendar');
+              }
+            },
+          ),
+          title: Text('Settlement Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline_rounded, size: 56, color: AppColors.error),
+                const SizedBox(height: 16),
+                Text('Error loading settlement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() => _isLoading = true);
+                    _load();
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_settlement == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/calendar');
+              }
+            },
+          ),
+          title: Text('Settlement Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceVariant,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.payments_outlined, size: 48, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Settlement Record Not Found',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This settlement record could not be found.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/calendar');
+                    }
+                  },
+                  child: const Text('Go to Calendar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SettlementHistoryDetailPage(
+      settlement: _settlement!,
+      fromName: _fromName,
+      toName: _toName,
     );
   }
 }

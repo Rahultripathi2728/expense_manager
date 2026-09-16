@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_spacing.dart';
 import '../../../core/utils/haptic_helper.dart';
+import '../../../app/constants/app_constants.dart';
 import '../../auth/data/auth_repository.dart';
 
 class ChangePasswordPage extends ConsumerStatefulWidget {
@@ -83,8 +84,8 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
       setState(() => _errorMessage = 'Please enter a valid 6-digit OTP code');
       return;
     }
-    if (newPass.length < 6) {
-      setState(() => _errorMessage = 'New password must be at least 6 characters');
+    if (newPass.length < AppConstants.minPasswordLength) {
+      setState(() => _errorMessage = 'New password must be at least ${AppConstants.minPasswordLength} characters');
       return;
     }
 
@@ -423,8 +424,8 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
               if (val == null || val.isEmpty) {
                 return 'Enter your current password';
               }
-              if (val.length < 6) {
-                return 'Password must be at least 6 characters';
+              if (val.length < AppConstants.minPasswordLength) {
+                return 'Password must be at least ${AppConstants.minPasswordLength} characters';
               }
               return null;
             },
@@ -438,7 +439,7 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
             decoration: InputDecoration(
               labelText: 'New Password',
               prefixIcon: const Icon(Icons.lock_reset_rounded),
-              helperText: 'Minimum 6 characters',
+              helperText: 'Minimum ${AppConstants.minPasswordLength} characters',
               suffixIcon: IconButton(
                 icon: Icon(
                   _obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined,
@@ -448,8 +449,8 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
               ),
             ),
             validator: (val) {
-              if (val == null || val.length < 6) {
-                return 'Password must be at least 6 characters';
+              if (val == null || val.length < AppConstants.minPasswordLength) {
+                return 'Password must be at least ${AppConstants.minPasswordLength} characters';
               }
               if (val == _currentPasswordCtrl.text) {
                 return 'New password must be different from current password';

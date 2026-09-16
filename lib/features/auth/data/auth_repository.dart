@@ -138,20 +138,43 @@ class AuthRepository {
     // Create session so we can create the profile
     await _account.createEmailPasswordSession(email: email, password: password);
 
+    // Save username locally
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_username_${user.$id}', username);
+    } catch (_) {}
+
     // Create profile document
-    await _tablesDB.createRow(
-      databaseId: AppConstants.databaseId,
-      tableId: AppConstants.profilesCollection,
-      rowId: ID.unique(),
-      data: {
-        'userId': user.$id,
-        'fullName': name,
-        'username': username,
-        'avatarUrl': null,
-        'monthlyBudget': 0.0,
-        'createdAt': DateTime.now().toIso8601String(),
-      },
-    );
+    try {
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        rowId: ID.unique(),
+        data: {
+          'userId': user.$id,
+          'fullName': name,
+          'username': username,
+          'avatarUrl': null,
+          'monthlyBudget': 0.0,
+          'createdAt': DateTime.now().toIso8601String(),
+        },
+      );
+    } catch (_) {
+      try {
+        await _tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.profilesCollection,
+          rowId: ID.unique(),
+          data: {
+            'userId': user.$id,
+            'fullName': name,
+            'avatarUrl': null,
+            'monthlyBudget': 0.0,
+            'createdAt': DateTime.now().toIso8601String(),
+          },
+        );
+      } catch (_) {}
+    }
 
     // Send verification email
     try {
@@ -200,19 +223,42 @@ class AuthRepository {
       secret: otpCode,
     );
 
-    await _tablesDB.createRow(
-      databaseId: AppConstants.databaseId,
-      tableId: AppConstants.profilesCollection,
-      rowId: ID.unique(),
-      data: {
-        'userId': userId,
-        'fullName': name,
-        'username': username,
-        'avatarUrl': null,
-        'monthlyBudget': 0.0,
-        'createdAt': DateTime.now().toIso8601String(),
-      },
-    );
+    // Save username locally so user profile has it immediately
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_username_$userId', username);
+    } catch (_) {}
+
+    try {
+      await _tablesDB.createRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.profilesCollection,
+        rowId: ID.unique(),
+        data: {
+          'userId': userId,
+          'fullName': name,
+          'username': username,
+          'avatarUrl': null,
+          'monthlyBudget': 0.0,
+          'createdAt': DateTime.now().toIso8601String(),
+        },
+      );
+    } catch (_) {
+      try {
+        await _tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.profilesCollection,
+          rowId: ID.unique(),
+          data: {
+            'userId': userId,
+            'fullName': name,
+            'avatarUrl': null,
+            'monthlyBudget': 0.0,
+            'createdAt': DateTime.now().toIso8601String(),
+          },
+        );
+      } catch (_) {}
+    }
 
     try {
       await _account.createEmailVerification(

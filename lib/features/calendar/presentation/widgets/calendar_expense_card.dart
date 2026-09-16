@@ -103,16 +103,13 @@ class CalendarExpenseCard extends ConsumerWidget {
     final splits = splitsAsync.valueOrNull ?? [];
 
     final balancesData = groupBalancesAsync.valueOrNull;
-    bool isFullySettled = expense.isSettled;
-    bool isPartiallySettled = false;
-    bool isLocked = expense.isSettled;
+    bool isFullySettled = isGroup && (balancesData != null ? balancesData.isExpenseFullySettled(expense) : expense.isSettled);
+    bool isPartiallySettled = isGroup && (balancesData != null ? balancesData.isExpensePartiallySettled(expense) : false);
+    bool isLocked = isGroup && (balancesData != null ? balancesData.isExpenseLocked(expense) : expense.isSettled);
     int settledDebtors = 0;
     int totalDebtors = 0;
 
     if (isGroup && balancesData != null) {
-      isFullySettled = balancesData.isExpenseFullySettled(expense);
-      isPartiallySettled = balancesData.isExpensePartiallySettled(expense);
-      isLocked = balancesData.isExpenseLocked(expense);
       settledDebtors = balancesData.getSettledDebtorsCount(expense);
       totalDebtors = balancesData.getTotalDebtorsCount(expense);
     }

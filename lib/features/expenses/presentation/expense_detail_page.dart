@@ -456,13 +456,15 @@ class _ExpenseDetailPageState extends ConsumerState<ExpenseDetailPage> {
                           title: ref
                               .watch(profileByIdProvider(split.userId))
                               .when(
-                                data: (p) => Text(
-                                  p?.fullName ?? 'Unknown',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
+                                  data: (p) => Text(
+                                    p?.fullName ?? 'Unknown',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
                                 loading: () => const Text('...'),
                                 error: (_, __) => const Text('Error'),
                               ),
@@ -582,6 +584,155 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class ExpenseDetailLoaderPage extends ConsumerWidget {
+  final String expenseId;
+
+  const ExpenseDetailLoaderPage({super.key, required this.expenseId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expenseAsync = ref.watch(expenseByIdProvider(expenseId));
+
+    return expenseAsync.when(
+      loading: () => Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/calendar');
+              }
+            },
+          ),
+          title: Text('Expense Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      error: (err, _) => Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/calendar');
+              }
+            },
+          ),
+          title: Text('Expense Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline_rounded, size: 56, color: AppColors.error),
+                const SizedBox(height: 16),
+                Text(
+                  'Error loading expense',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  err.toString(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => ref.invalidate(expenseByIdProvider(expenseId)),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      data: (expense) {
+        if (expense == null) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AppBar(
+              backgroundColor: AppColors.surface,
+              elevation: 0,
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/calendar');
+                  }
+                },
+              ),
+              title: Text('Expense Details', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceVariant,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.delete_outline_rounded, size: 48, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Expense Not Found',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'This expense may have been deleted or is no longer available.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/calendar');
+                        }
+                      },
+                      child: const Text('Go to Calendar'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        return ExpenseDetailPage(expense: expense);
+      },
     );
   }
 }

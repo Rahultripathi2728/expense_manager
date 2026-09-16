@@ -681,6 +681,7 @@ class AddExpenseNotifier extends StateNotifier<AddExpenseState> {
     final initialBill = SingleBillState(
       selectedMemberIds: List<String>.from(memberIds),
       unequalAmounts: {for (var id in memberIds) id: 0.0},
+      date: _pendingDate ?? DateTime.now(),
     );
 
     state = state.copyWith(

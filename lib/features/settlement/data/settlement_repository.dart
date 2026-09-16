@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../../core/appwrite_client.dart';
@@ -117,7 +118,7 @@ class SettlementRepository {
     );
   }
 
-  Future<void> settleBalancesLocalFallback(
+  Future<String?> settleBalancesLocalFallback(
     String groupId,
     String fromUserId,
     String toUserId,
@@ -155,7 +156,7 @@ class SettlementRepository {
         if ((docAmount - amount).abs() < 0.05) {
           if (docCreatedAt != null && now.difference(docCreatedAt).inSeconds.abs() < 120) {
             // Duplicate prevented: already settled within the last 2 minutes.
-            return;
+            return null;
           }
         }
       }
@@ -180,7 +181,7 @@ class SettlementRepository {
         }
         if (allAlreadySettled) {
           // All referenced expenses are already marked as settled!
-          return;
+          return null;
         }
       } catch (_) {}
     }
@@ -224,7 +225,7 @@ class SettlementRepository {
             .map((r) => r.data['userId'] as String)
             .toList();
 
-        if (memberUserIds.isEmpty) return;
+        if (memberUserIds.isEmpty) return settlementId;
 
         final activeExpIds = activeExpenses.map((e) => e.id).toList();
         final splitsRes = await _tablesDB.listRows(
@@ -267,6 +268,7 @@ class SettlementRepository {
         }
       }
     } catch (_) {}
+    return settlementId;
   }
 
   Future<List<Settlement>> getGroupSettlements(String groupId) async {
@@ -314,6 +316,19 @@ class SettlementRepository {
       return [];
     }
   }
+
+  Future<Settlement?> getSettlementById(String settlementId) async {
+    try {
+      final doc = await _tablesDB.getRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.settlementsCollection,
+        rowId: settlementId,
+      );
+      return Settlement.fromMap(doc.dataWithId);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 final settlementRepositoryProvider = Provider<SettlementRepository>((ref) {
@@ -323,26 +338,42 @@ final settlementRepositoryProvider = Provider<SettlementRepository>((ref) {
   );
 });
 
+final settlementByIdProvider = FutureProvider.family<Settlement?, String>((ref, settlementId) async {
+  return ref.watch(settlementRepositoryProvider).getSettlementById(settlementId);
+});
+
 final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime>((ref, month) async {
   final user = ref.watch(authStateProvider).valueOrNull;
   if (user == null) return CashFlowSummaryData.empty();
 
   final myUserId = user.id;
 
-  // 1. Fetch monthly expenses
-  final expenses = await ref.watch(monthlyExpensesProvider(month).future);
+  // Watch all synchronous dependencies UP FRONT before any await!
+  final monthlyExpensesAsync = ref.watch(monthlyExpensesProvider(month));
+  final userSplitsAsync = ref.watch(userSplitsProvider);
+  final userGroupsAsync = ref.watch(userGroupsProvider);
+  final settlementsRepo = ref.watch(settlementRepositoryProvider);
+  final tablesDB = ref.watch(appwriteTablesDBProvider);
 
-  // 2. Fetch splits
-  final userSplits = ref.watch(userSplitsProvider).valueOrNull ?? [];
+  // 1. Fetch monthly expenses
+  final List<Expense> expenses = monthlyExpensesAsync.valueOrNull ??
+      await ref.watch(monthlyExpensesProvider(month).future);
+
+  // 2. Splits
+  final userSplits = userSplitsAsync.valueOrNull ?? [];
   final splitMap = {for (var s in userSplits) s.expenseId: s.amountOwed};
 
-  // 3. Fetch groups & profiles for names
-  final groups = ref.watch(userGroupsProvider).valueOrNull ?? [];
+  // 3. Groups
+  final groups = userGroupsAsync.valueOrNull ?? [];
   final groupMap = {for (var g in groups) g.id: g.name};
 
   // 4. Fetch user settlements
-  final settlementsRepo = ref.watch(settlementRepositoryProvider);
-  final allSettlements = await settlementsRepo.getUserSettlements(myUserId);
+  List<Settlement> allSettlements = [];
+  try {
+    allSettlements = await settlementsRepo.getUserSettlements(myUserId);
+  } catch (e) {
+    debugPrint('userCashFlowProvider settlements fetch error: $e');
+  }
 
   // Filter settlements for this month
   final monthSettlements = allSettlements.where((s) {
@@ -367,7 +398,6 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   Map<String, String> profileNames = {};
   if (participantIds.isNotEmpty) {
     try {
-      final tablesDB = ref.watch(appwriteTablesDBProvider);
       final resProfiles = await tablesDB.listRows(
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.profilesCollection,
@@ -515,8 +545,8 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   activities.sort((a, b) => b.date.compareTo(a.date));
 
   final totalSpent = personalSpent + groupShareSpent;
-  // Net cash flow: when all settlements clear, the true net cost to the user is (Personal + My Share)
-  final netCashFlow = totalSpent;
+  // Net cash flow (Option B): Total Cash Inflow (Received) - Total Cash Outflow (Paid Out of Pocket)
+  final netCashFlow = totalReceived - totalOutOfPocketPaid;
 
   return CashFlowSummaryData(
     totalExpensesVolume: totalExpensesVolume,

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/appwrite_client.dart';
@@ -215,12 +216,14 @@ class ItemsRepository {
     final updatedList = cached.where((i) => i.id != itemId).toList();
     await _cacheService.cacheShoppingItems(updatedList);
 
-    // Asynchronously delete from Appwrite
-    _tablesDB.deleteRow(
-      databaseId: AppConstants.databaseId,
-      tableId: AppConstants.listsCollection,
-      rowId: itemId,
-    ).then((_) {}, onError: (_) {});
+    // Await delete from Appwrite to prevent resurrection race condition
+    try {
+      await _tablesDB.deleteRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.listsCollection,
+        rowId: itemId,
+      );
+    } catch (_) {}
   }
 
   Future<void> _notifyMembers({
@@ -237,20 +240,47 @@ class ItemsRepository {
           .where((m) => m.userId != senderUserId && seenUserIds.add(m.userId))
           .toList();
 
+      final notifPayload = jsonEncode({
+        'groupId': groupId,
+        'type': type,
+      });
+
       for (final m in otherMembers) {
+        final notifData = {
+          'userId': m.userId,
+          'title': title,
+          'body': body,
+          'type': type,
+          'isRead': false,
+          'createdAt': DateTime.now().toIso8601String(),
+          'payload': notifPayload,
+        };
         _tablesDB.createRow(
           databaseId: AppConstants.databaseId,
           tableId: AppConstants.notificationsCollection,
           rowId: ID.unique(),
-          data: {
-            'userId': m.userId,
-            'title': title,
-            'body': body,
-            'type': type,
-            'isRead': false,
-            'createdAt': DateTime.now().toIso8601String(),
-          },
-        ).then((_) {}, onError: (_) {});
+          data: notifData,
+          permissions: [
+            Permission.read(Role.users()),
+            Permission.update(Role.users()),
+            Permission.delete(Role.users()),
+          ],
+        ).then((_) {}, onError: (e) {
+          if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+            notifData.remove('payload');
+            _tablesDB.createRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.notificationsCollection,
+              rowId: ID.unique(),
+              data: notifData,
+              permissions: [
+                Permission.read(Role.users()),
+                Permission.update(Role.users()),
+                Permission.delete(Role.users()),
+              ],
+            ).then((_) {}, onError: (_) {});
+          }
+        });
       }
     } catch (_) {}
   }

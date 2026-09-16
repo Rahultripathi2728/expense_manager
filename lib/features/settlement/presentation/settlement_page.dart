@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
@@ -312,7 +313,7 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
     setState(() => settling = true);
     try {
       final repo = ref.read(settlementRepositoryProvider);
-      await repo.settleBalancesLocalFallback(
+      final settlementId = await repo.settleBalancesLocalFallback(
         selectedGroupId!,
         tx.fromUserId,
         tx.toUserId,
@@ -320,24 +321,99 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
         expIds,
       );
 
-      // In-app notification to recipient
+      // In-app notifications to recipient and payer
       try {
         final currentUser = ref.read(authStateProvider).valueOrNull;
         final payerName = currentUser?.name.isNotEmpty == true ? currentUser!.name : 'Group Member';
         final tablesDB = ref.read(appwriteTablesDBProvider);
-        await tablesDB.createRow(
-          databaseId: AppConstants.databaseId,
-          tableId: AppConstants.notificationsCollection,
-          rowId: ID.unique(),
-          data: {
-            'userId': tx.toUserId,
-            'title': '💰 Payment Received & Settled',
-            'body': '$payerName marked ₹${tx.amount.toStringAsFixed(0)} as paid and settled with you.',
+        final notifPayload = jsonEncode({
+          'groupId': selectedGroupId,
+          'settlementId': settlementId,
+          'fromUserId': tx.fromUserId,
+          'toUserId': tx.toUserId,
+          'amount': tx.amount,
+        });
+
+        // 1. Recipient notification
+        final recipientNotif = {
+          'userId': tx.toUserId,
+          'title': '💰 Payment Received & Settled',
+          'body': '$payerName marked ₹${tx.amount.toStringAsFixed(0)} as paid and settled with you.',
+          'type': 'settled',
+          'isRead': false,
+          'createdAt': DateTime.now().toIso8601String(),
+          'payload': notifPayload,
+        };
+        try {
+          await tablesDB.createRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.notificationsCollection,
+            rowId: ID.unique(),
+            data: recipientNotif,
+            permissions: [
+              Permission.read(Role.users()),
+              Permission.update(Role.users()),
+              Permission.delete(Role.users()),
+            ],
+          );
+        } catch (e) {
+          if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+            recipientNotif.remove('payload');
+            await tablesDB.createRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.notificationsCollection,
+              rowId: ID.unique(),
+              data: recipientNotif,
+              permissions: [
+                Permission.read(Role.users()),
+                Permission.update(Role.users()),
+                Permission.delete(Role.users()),
+              ],
+            );
+          }
+        }
+
+        // 2. Payer notification
+        if (currentUser != null) {
+          final toName = ref.read(groupBalancesProvider(selectedGroupId!)).valueOrNull?.profiles[tx.toUserId]?.fullName ?? 'Group Member';
+          final payerNotif = {
+            'userId': currentUser.id,
+            'title': '✅ Payment Settled',
+            'body': 'You marked ₹${tx.amount.toStringAsFixed(0)} as paid and settled with $toName.',
             'type': 'settled',
             'isRead': false,
             'createdAt': DateTime.now().toIso8601String(),
-          },
-        );
+            'payload': notifPayload,
+          };
+          try {
+            await tablesDB.createRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.notificationsCollection,
+              rowId: ID.unique(),
+              data: payerNotif,
+              permissions: [
+                Permission.read(Role.users()),
+                Permission.update(Role.users()),
+                Permission.delete(Role.users()),
+              ],
+            );
+          } catch (e) {
+            if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+              payerNotif.remove('payload');
+              await tablesDB.createRow(
+                databaseId: AppConstants.databaseId,
+                tableId: AppConstants.notificationsCollection,
+                rowId: ID.unique(),
+                data: payerNotif,
+                permissions: [
+                  Permission.read(Role.users()),
+                  Permission.update(Role.users()),
+                  Permission.delete(Role.users()),
+                ],
+              );
+            }
+          }
+        }
       } catch (_) {}
 
       ref.invalidate(groupBalancesProvider(selectedGroupId!));
@@ -891,6 +967,8 @@ class _SettlementPageState extends ConsumerState<SettlementPage> with WidgetsBin
                                                     fontSize: 14.5,
                                                     color: AppColors.textPrimary,
                                                   ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                                 subtitle: Text(
                                                   totalSetsPaid > 0

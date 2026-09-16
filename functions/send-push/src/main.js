@@ -44,15 +44,15 @@ module.exports = async function (context) {
         type: notification.type || 'general',
         entityId: notification.entityId || ''
       },                                       // Data
-      '',                                      // Action
-      '',                                      // Image
-      '',                                      // Icon
+      'OPEN_APP',                              // Action (non-empty string required by Appwrite)
+      null,                                    // Image
+      null,                                    // Icon
       'default',                               // Sound
       '#2563EB',                               // Color
-      '',                                      // Tag
+      null,                                    // Tag
       1,                                       // Badge
       false,                                   // Draft
-      '',                                      // ScheduledAt
+      null,                                    // ScheduledAt
       false,                                   // ContentAvailable
       false,                                   // Critical
       'high'                                   // Priority

@@ -129,16 +129,18 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
       if (widget.initialDate != null) {
         _selectedDate = widget.initialDate!;
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(addExpenseProvider(widget.group?.id).notifier).updateDate(_selectedDate);
-        if (widget.initialDescription != null) {
-          ref.read(addExpenseProvider(widget.group?.id).notifier).updateDescription(widget.initialDescription!);
-          if (widget.initialCategory != null) {
-            ref.read(addExpenseProvider(widget.group?.id).notifier).updateCategory(widget.initialCategory!);
+      Future.microtask(() {
+        if (mounted) {
+          ref.read(addExpenseProvider(widget.group?.id).notifier).updateDate(_selectedDate);
+          if (widget.initialDescription != null) {
+            ref.read(addExpenseProvider(widget.group?.id).notifier).updateDescription(widget.initialDescription!);
+            if (widget.initialCategory != null) {
+              ref.read(addExpenseProvider(widget.group?.id).notifier).updateCategory(widget.initialCategory!);
+            }
           }
-        }
-        if (widget.initialAmount != null) {
-          ref.read(addExpenseProvider(widget.group?.id).notifier).updateAmount(widget.initialAmount!);
+          if (widget.initialAmount != null) {
+            ref.read(addExpenseProvider(widget.group?.id).notifier).updateAmount(widget.initialAmount!);
+          }
         }
       });
     }
@@ -196,6 +198,7 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
     if (state.bills.isNotEmpty) {
       final safeIndex = state.activeBillIndex.clamp(0, state.bills.length - 1);
       if (safeIndex != _lastSyncedBillIndex || state.bills.length != _lastBillCount) {
+        final isFirstSync = _lastSyncedBillIndex == -1;
         _lastSyncedBillIndex = safeIndex;
         _lastBillCount = state.bills.length;
         final currentBill = state.bills[safeIndex];
@@ -213,7 +216,17 @@ class _AddExpenseScreenState extends ConsumerState<AddExpenseScreen> {
           _amountCtrl.text = targetAmountText;
         }
 
-        final billDate = currentBill.date ?? _selectedDate;
+        final DateTime billDate;
+        if (isFirstSync && widget.initialDate != null) {
+          billDate = widget.initialDate!;
+          Future.microtask(() {
+            if (mounted) {
+              ref.read(addExpenseProvider(widget.group?.id).notifier).updateDate(widget.initialDate!);
+            }
+          });
+        } else {
+          billDate = currentBill.date ?? _selectedDate;
+        }
         _selectedDate = billDate;
         _dateCtrl.text = _formatDate(billDate);
       }

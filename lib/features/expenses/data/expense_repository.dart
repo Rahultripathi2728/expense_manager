@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,7 +36,7 @@ class ExpenseRepository {
       'expenseType': 'personal',
       'expenseDate': date.toIso8601String(),
       'createdAt': DateTime.now().toIso8601String(),
-      'isSettled': true,
+      'isSettled': false,
     };
 
     final connectivityResult = await Connectivity().checkConnectivity();
@@ -146,41 +147,89 @@ class ExpenseRepository {
       final profileRes = await _tablesDB.listRows(
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.profilesCollection,
-        queries: [Query.equal('\$id', userId)],
+        queries: [Query.equal('userId', userId)],
       );
       if (profileRes.rows.isNotEmpty) {
-        creatorName = profileRes.rows.first.data['name'] ?? 'A group member';
+        creatorName = profileRes.rows.first.data['fullName'] ?? profileRes.rows.first.data['name'] ?? 'A group member';
       }
     } catch (_) {}
 
-    // Batch-write notifications in parallel (deduplicated by userId)
-    final notifiedUserIds = <String>{};
-    final notifFutures = preparedSplits
-        .where((split) =>
-            split['userId'] != userId &&
-            split['isIncluded'] == true &&
-            notifiedUserIds.add(split['userId'] as String))
-        .map((split) {
-      final notifId = ID.unique();
-      return _tablesDB.createRow(
+    // Collect all group members (and split participants) except the creator
+    final targetUserIds = <String>{};
+    try {
+      final groupMembersRes = await _tablesDB.listRows(
         databaseId: AppConstants.databaseId,
-        tableId: AppConstants.notificationsCollection,
-        rowId: notifId,
-        data: {
-          'userId': split['userId'],
+        tableId: AppConstants.groupMembersCollection,
+        queries: [Query.equal('groupId', groupId)],
+      );
+      for (final gm in groupMembersRes.rows) {
+        final mUserId = gm.data['userId'] as String?;
+        if (mUserId != null && mUserId != userId) {
+          targetUserIds.add(mUserId);
+        }
+      }
+    } catch (_) {}
+
+    for (final split in preparedSplits) {
+      final splitUserId = split['userId'] as String?;
+      if (splitUserId != null && splitUserId != userId && split['isIncluded'] == true) {
+        targetUserIds.add(splitUserId);
+      }
+    }
+
+    final notifPayload = jsonEncode({
+      'expenseId': doc.$id,
+      'groupId': groupId,
+      'date': expenseDate,
+    });
+
+    // Batch-write notifications in parallel for all target users
+    final notifFutures = targetUserIds.map((uId) async {
+      try {
+        final notifId = ID.unique();
+        final notifData = {
+          'userId': uId,
           'type': 'expense_added',
           'title': 'New Group Expense',
           'body': '$creatorName added "$description" (${amount.toStringAsFixed(0)})',
           'isRead': false,
           'createdAt': createdAt,
-        },
-        permissions: [
-          Permission.read(Role.users()),
-          Permission.update(Role.users()),
-          Permission.delete(Role.users()),
-        ],
-      );
-    });
+          'payload': notifPayload,
+        };
+        try {
+          await _tablesDB.createRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.notificationsCollection,
+            rowId: notifId,
+            data: notifData,
+            permissions: [
+              Permission.read(Role.users()),
+              Permission.update(Role.users()),
+              Permission.delete(Role.users()),
+            ],
+          );
+        } catch (e) {
+          if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+            notifData.remove('payload');
+            await _tablesDB.createRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.notificationsCollection,
+              rowId: notifId,
+              data: notifData,
+              permissions: [
+                Permission.read(Role.users()),
+                Permission.update(Role.users()),
+                Permission.delete(Role.users()),
+              ],
+            );
+          } else {
+            rethrow;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error writing notification for $uId: $e');
+      }
+    }).toList();
     if (notifFutures.isNotEmpty) {
       await Future.wait(notifFutures);
     }
@@ -310,6 +359,93 @@ class ExpenseRepository {
       );
     }
 
+    // Batch-write notifications for expense update
+    final existingGroupId = doc.data['groupId'] as String?;
+    final editorUserId = doc.data['userId'] as String?;
+
+    if (existingGroupId != null) {
+      try {
+        String editorName = '';
+        if (editorUserId != null) {
+          try {
+            final profileRes = await _tablesDB.listRows(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.profilesCollection,
+              queries: [Query.equal('userId', editorUserId)],
+            );
+            if (profileRes.rows.isNotEmpty) {
+              editorName = profileRes.rows.first.data['fullName'] ?? profileRes.rows.first.data['name'] ?? 'A member';
+            }
+          } catch (_) {}
+        }
+        if (editorName.isEmpty) editorName = 'A member';
+
+        final targetUserIds = <String>{};
+        try {
+          final groupMembersRes = await _tablesDB.listRows(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.groupMembersCollection,
+            queries: [Query.equal('groupId', existingGroupId)],
+          );
+          for (final gm in groupMembersRes.rows) {
+            final mUserId = gm.data['userId'] as String?;
+            if (mUserId != null && mUserId != editorUserId) targetUserIds.add(mUserId);
+          }
+        } catch (_) {}
+
+        final notifPayload = jsonEncode({
+          'expenseId': expenseId,
+          'groupId': existingGroupId,
+          'date': expenseDate,
+        });
+
+        final notifFutures = targetUserIds.map((uId) async {
+          try {
+            final notifData = {
+              'userId': uId,
+              'type': 'expense_updated',
+              'title': 'Expense Updated',
+              'body': '$editorName updated "$description" (₹${amount.toStringAsFixed(0)})',
+              'isRead': false,
+              'createdAt': DateTime.now().toIso8601String(),
+              'payload': notifPayload,
+            };
+            try {
+              await _tablesDB.createRow(
+                databaseId: AppConstants.databaseId,
+                tableId: AppConstants.notificationsCollection,
+                rowId: ID.unique(),
+                data: notifData,
+                permissions: [
+                  Permission.read(Role.users()),
+                  Permission.update(Role.users()),
+                  Permission.delete(Role.users()),
+                ],
+              );
+            } catch (e) {
+              if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+                notifData.remove('payload');
+                await _tablesDB.createRow(
+                  databaseId: AppConstants.databaseId,
+                  tableId: AppConstants.notificationsCollection,
+                  rowId: ID.unique(),
+                  data: notifData,
+                  permissions: [
+                    Permission.read(Role.users()),
+                    Permission.update(Role.users()),
+                    Permission.delete(Role.users()),
+                  ],
+                );
+              }
+            }
+          } catch (_) {}
+        }).toList();
+        if (notifFutures.isNotEmpty) {
+          await Future.wait(notifFutures);
+        }
+      } catch (_) {}
+    }
+
     return Expense.fromMap(doc.dataWithId);
   }
 
@@ -423,6 +559,7 @@ class ExpenseRepository {
     String? groupId;
     String? description;
     double? amount;
+    String? expenseDate;
     final List<String> participantUserIds = [];
 
     try {
@@ -434,6 +571,7 @@ class ExpenseRepository {
       groupId = expDoc.data['groupId'] as String?;
       description = expDoc.data['description'] as String? ?? 'Expense';
       amount = (expDoc.data['amount'] as num?)?.toDouble() ?? 0.0;
+      expenseDate = expDoc.data['expenseDate'] as String?;
     } catch (_) {}
 
     try {
@@ -483,49 +621,82 @@ class ExpenseRepository {
             final profileRes = await _tablesDB.listRows(
               databaseId: AppConstants.databaseId,
               tableId: AppConstants.profilesCollection,
-              queries: [Query.equal(r'$id', deleterUserId)],
+              queries: [Query.equal('userId', deleterUserId)],
             );
             if (profileRes.rows.isNotEmpty) {
-              name = profileRes.rows.first.data['name'] ?? 'A member';
+              name = profileRes.rows.first.data['fullName'] ?? profileRes.rows.first.data['name'] ?? 'A member';
             }
           } catch (_) {}
         }
         if (name.isEmpty) name = 'A member';
 
         // Also fetch all members of the group to ensure everyone gets notified
-        final groupMembersRes = await _tablesDB.listRows(
-          databaseId: AppConstants.databaseId,
-          tableId: AppConstants.groupMembersCollection,
-          queries: [Query.equal('groupId', groupId)],
-        );
-        for (final gm in groupMembersRes.rows) {
-          final mUserId = gm.data['userId'] as String?;
-          if (mUserId != null) participantUserIds.add(mUserId);
+        final targetUserIds = <String>{};
+        try {
+          final groupMembersRes = await _tablesDB.listRows(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.groupMembersCollection,
+            queries: [Query.equal('groupId', groupId)],
+          );
+          for (final gm in groupMembersRes.rows) {
+            final mUserId = gm.data['userId'] as String?;
+            if (mUserId != null && mUserId != deleterUserId) targetUserIds.add(mUserId);
+          }
+        } catch (_) {}
+
+        for (final pId in participantUserIds) {
+          if (pId != deleterUserId) targetUserIds.add(pId);
         }
 
-        final notifiedUserIds = <String>{};
-        final notifFutures = participantUserIds
-            .where((uId) => uId != deleterUserId && notifiedUserIds.add(uId))
-            .map((uId) {
-          return _tablesDB.createRow(
-            databaseId: AppConstants.databaseId,
-            tableId: AppConstants.notificationsCollection,
-            rowId: ID.unique(),
-            data: {
+        final notifPayload = jsonEncode({
+          'groupId': groupId,
+          'date': expenseDate ?? DateTime.now().toIso8601String(),
+          'description': description,
+        });
+
+        final notifFutures = targetUserIds.map((uId) async {
+          try {
+            final notifData = {
               'userId': uId,
               'type': 'expense_deleted',
               'title': 'Expense Deleted',
               'body': '$name deleted "$description" (₹${(amount ?? 0).toStringAsFixed(0)})',
               'isRead': false,
               'createdAt': DateTime.now().toIso8601String(),
-            },
-            permissions: [
-              Permission.read(Role.users()),
-              Permission.update(Role.users()),
-              Permission.delete(Role.users()),
-            ],
-          );
-        });
+              'payload': notifPayload,
+            };
+            try {
+              await _tablesDB.createRow(
+                databaseId: AppConstants.databaseId,
+                tableId: AppConstants.notificationsCollection,
+                rowId: ID.unique(),
+                data: notifData,
+                permissions: [
+                  Permission.read(Role.users()),
+                  Permission.update(Role.users()),
+                  Permission.delete(Role.users()),
+                ],
+              );
+            } catch (e) {
+              if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+                notifData.remove('payload');
+                await _tablesDB.createRow(
+                  databaseId: AppConstants.databaseId,
+                  tableId: AppConstants.notificationsCollection,
+                  rowId: ID.unique(),
+                  data: notifData,
+                  permissions: [
+                    Permission.read(Role.users()),
+                    Permission.update(Role.users()),
+                    Permission.delete(Role.users()),
+                  ],
+                );
+              }
+            }
+          } catch (e) {
+            debugPrint('Error writing deletion notification for $uId: $e');
+          }
+        }).toList();
 
         if (notifFutures.isNotEmpty) {
           await Future.wait(notifFutures);
@@ -535,7 +706,24 @@ class ExpenseRepository {
       }
     }
   }
+
+  Future<Expense?> getExpenseById(String expenseId) async {
+    try {
+      final doc = await _tablesDB.getRow(
+        databaseId: AppConstants.databaseId,
+        tableId: AppConstants.expensesCollection,
+        rowId: expenseId,
+      );
+      return Expense.fromMap(doc.dataWithId);
+    } catch (_) {
+      return null;
+    }
+  }
 }
+
+final expenseByIdProvider = FutureProvider.family<Expense?, String>((ref, expenseId) async {
+  return ref.watch(expenseRepositoryProvider).getExpenseById(expenseId);
+});
 
 final expenseRepositoryProvider = Provider<ExpenseRepository>((ref) {
   return ExpenseRepository(
@@ -551,10 +739,10 @@ class MonthlyExpensesNotifier extends FamilyAsyncNotifier<List<Expense>, DateTim
     if (user == null) return [];
 
     final repo = ref.watch(expenseRepositoryProvider);
-    final created = await repo.getExpensesForMonth(user.id, month);
-
     final groupsAsync = ref.watch(userGroupsProvider);
     final groups = groupsAsync.valueOrNull ?? [];
+
+    final created = await repo.getExpensesForMonth(user.id, month);
 
     // Get all splits where current user owes an amount > 0
     final userSplits = await repo.getUserSplits(user.id);

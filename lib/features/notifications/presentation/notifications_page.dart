@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:expense_manager/app/theme/theme_provider.dart';
@@ -11,6 +12,11 @@ import '../data/notification_repository.dart';
 import '../domain/notification_model.dart';
 import '../../../shared/widgets/skeleton_loading_card.dart';
 import '../../../core/utils/haptic_helper.dart';
+import '../../calendar/presentation/calendar_page.dart';
+import '../../items/presentation/items_page.dart';
+import '../../groups/data/group_repository.dart';
+import '../../expenses/data/expense_repository.dart';
+import '../../expenses/domain/expense_model.dart';
 
 class NotificationsPage extends ConsumerStatefulWidget {
   const NotificationsPage({super.key});
@@ -225,14 +231,14 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
           final filtered = allNotifications.where((n) {
             if (_selectedFilter == 'unread') return !n.isRead;
             if (_selectedFilter == 'payments') return n.type == 'settled' || n.type == 'payment';
-            if (_selectedFilter == 'expenses') return n.type == 'expense_added' || n.type == 'expense' || n.type == 'expense_deleted';
+            if (_selectedFilter == 'expenses') return n.type == 'expense_added' || n.type == 'expense_updated' || n.type == 'expense' || n.type == 'expense_deleted';
             if (_selectedFilter == 'groups') return n.type == 'joined_group' || n.type == 'group';
             return true;
           }).toList();
 
           final countUnread = allNotifications.where((n) => !n.isRead).length;
           final countPayments = allNotifications.where((n) => n.type == 'settled' || n.type == 'payment').length;
-          final countExpenses = allNotifications.where((n) => n.type == 'expense_added' || n.type == 'expense' || n.type == 'expense_deleted').length;
+          final countExpenses = allNotifications.where((n) => n.type == 'expense_added' || n.type == 'expense_updated' || n.type == 'expense' || n.type == 'expense_deleted').length;
           final countGroups = allNotifications.where((n) => n.type == 'joined_group' || n.type == 'group').length;
 
           return Column(
@@ -403,12 +409,7 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
         ref.read(notificationsProvider.notifier).deleteNotification(notif.id);
       },
       child: InkWell(
-        onTap: () {
-          if (!notif.isRead) {
-            HapticHelper.lightTap();
-            ref.read(notificationsProvider.notifier).markNotificationAsRead(notif.id);
-          }
-        },
+        onTap: () => _handleNotificationTap(notif),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(14),
@@ -515,6 +516,17 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: notif.isRead
+                      ? AppColors.textTertiary.withValues(alpha: 0.4)
+                      : meta.color.withValues(alpha: 0.8),
+                ),
+              ),
             ],
           ),
         ),
@@ -530,6 +542,126 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
         );
   }
 
+  Future<void> _handleNotificationTap(NotificationModel notif) async {
+    HapticHelper.lightTap();
+
+    // 1. Mark as read immediately
+    if (!notif.isRead) {
+      ref.read(notificationsProvider.notifier).markNotificationAsRead(notif.id);
+    }
+
+    // 2. Decode payload if available
+    Map<String, dynamic> payloadData = {};
+    if (notif.payload != null && notif.payload!.trim().isNotEmpty) {
+      try {
+        payloadData = jsonDecode(notif.payload!) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
+    final type = notif.type.toLowerCase().trim();
+
+    // ── 3. Expense Added / Updated / General Expense ──
+    if (type == 'expense_added' || type == 'expense_updated' || type == 'expense') {
+      final expenseId = payloadData['expenseId'] as String?;
+      if (expenseId != null && expenseId.isNotEmpty) {
+        context.push('/expense-detail', extra: expenseId);
+        return;
+      }
+
+      // Fallback: search for expense by title/description in group expenses
+      try {
+        final groups = ref.read(userGroupsProvider).valueOrNull ?? [];
+        final expRepo = ref.read(expenseRepositoryProvider);
+        final quotedDesc = RegExp(r'"([^"]+)"').firstMatch(notif.body)?.group(1);
+
+        Expense? matchedExpense;
+        for (final g in groups) {
+          final gExps = await expRepo.getGroupExpenses(g.id);
+          if (quotedDesc != null) {
+            matchedExpense = gExps.where((e) => e.description.toLowerCase() == quotedDesc.toLowerCase()).firstOrNull;
+          }
+          if (matchedExpense != null) break;
+        }
+
+        if (matchedExpense != null) {
+          if (mounted) context.push('/expense-detail', extra: matchedExpense);
+          return;
+        }
+      } catch (_) {}
+
+      // If cannot find specific expense, navigate to expenses tab
+      if (mounted) context.go('/expenses');
+      return;
+    }
+
+    // ── 4. Settled / Payment ──
+    if (type == 'settled' || type == 'payment') {
+      final settlementId = payloadData['settlementId'] as String?;
+      final groupId = payloadData['groupId'] as String?;
+
+      if (settlementId != null && settlementId.isNotEmpty) {
+        context.push('/settlement-history-detail', extra: {
+          'settlementId': settlementId,
+        });
+        return;
+      }
+
+      if (groupId != null && groupId.isNotEmpty) {
+        context.push('/settlement-history', extra: groupId);
+        return;
+      }
+
+      // Fallback: check user's groups
+      final groups = ref.read(userGroupsProvider).valueOrNull ?? [];
+      if (groups.isNotEmpty) {
+        context.push('/settlement-history', extra: groups.first.id);
+      } else {
+        context.go('/groups');
+      }
+      return;
+    }
+
+    // ── 5. Expense Deleted ──
+    if (type == 'expense_deleted') {
+      DateTime targetDate = notif.createdAt;
+      final dateStr = payloadData['date'] as String?;
+      if (dateStr != null) {
+        final parsed = DateTime.tryParse(dateStr);
+        if (parsed != null) targetDate = parsed;
+      }
+
+      // Focus calendar on the target date
+      ref.read(selectedDateProvider.notifier).state = targetDate;
+      ref.read(calendarMonthProvider.notifier).state = DateTime(targetDate.year, targetDate.month, 1);
+      context.go('/calendar');
+      return;
+    }
+
+    // ── 6. Item Added / Shopping List Updated ──
+    if (type == 'list_updated' || type == 'item') {
+      final groupId = payloadData['groupId'] as String?;
+      if (groupId != null && groupId.isNotEmpty) {
+        ref.read(selectedItemGroupTabProvider.notifier).state = groupId;
+      }
+      context.go('/items');
+      return;
+    }
+
+    // ── 7. Joined Group / Group Invitation ──
+    if (type == 'joined_group' || type == 'group') {
+      final groupId = payloadData['groupId'] as String?;
+      if (groupId != null && groupId.isNotEmpty) {
+        context.push('/group/$groupId');
+      } else {
+        context.go('/groups');
+      }
+      return;
+    }
+
+    // Default fallback: calendar
+    context.go('/calendar');
+  }
+
   _NotificationTypeMeta _getNotificationMeta(String type) {
     switch (type.toLowerCase().trim()) {
       case 'settled':
@@ -539,6 +671,7 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
           color: const Color(0xFF10B981),
         );
       case 'expense_added':
+      case 'expense_updated':
       case 'expense':
         return _NotificationTypeMeta(
           icon: Icons.receipt_long_rounded,

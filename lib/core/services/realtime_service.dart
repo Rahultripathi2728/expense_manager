@@ -66,12 +66,47 @@ class RealtimeService {
           try {
             final groupId = doc['groupId'] as String?;
             final id = doc['\$id'] as String? ?? '';
+            final paidBy = doc['paidBy'] as String?;
+            final currentUserId = _ref.read(authStateProvider).valueOrNull?.id;
+
+            if (currentUserId == null) return;
+
+            final isPersonal = groupId == null || groupId.isEmpty;
+
+            // Strict privacy check:
+            // 1. Personal expense belongs ONLY to the user who created/paid it.
+            //    If another user created a personal expense, ignore it completely.
+            if (isPersonal && paidBy != null && paidBy != currentUserId) {
+              return;
+            }
+
+            // 2. Group expense belongs ONLY to members of that group.
+            if (!isPersonal && groupId.isNotEmpty) {
+              final userGroups = _ref.read(userGroupsProvider).valueOrNull;
+              if (userGroups != null && !userGroups.any((g) => g.id == groupId)) {
+                return;
+              }
+            }
+
+            DateTime? monthKey;
+            if (doc['expenseDate'] != null) {
+              final parsed = DateTime.tryParse(doc['expenseDate'] as String);
+              if (parsed != null) {
+                monthKey = DateTime(parsed.year, parsed.month);
+              }
+            }
+            final now = DateTime.now();
+            final currentMonthKey = DateTime(now.year, now.month);
 
             // Real-time invalidation of all related expense & balance providers across app
             _ref.invalidate(userSplitsProvider);
-            _ref.invalidate(monthlyExpensesProvider);
-            _ref.invalidate(monthlyExpenseItemsProvider);
-            _ref.invalidate(userCashFlowProvider);
+            if (monthKey != null) {
+              _ref.invalidate(monthlyExpensesProvider(monthKey));
+              _ref.invalidate(monthlyExpenseItemsProvider(monthKey));
+              _ref.invalidate(userCashFlowProvider(monthKey));
+            }
+            _ref.invalidate(monthlyExpensesProvider(currentMonthKey));
+            _ref.invalidate(userCashFlowProvider(currentMonthKey));
 
             if (groupId != null && groupId.isNotEmpty) {
               _ref.invalidate(groupLedgerProvider(groupId));
@@ -80,16 +115,16 @@ class RealtimeService {
             }
 
             if (action.endsWith('.delete')) {
-              if (doc['expenseDate'] != null) {
-                final expenseDate = DateTime.parse(doc['expenseDate'] as String);
-                final monthKey = DateTime(expenseDate.year, expenseDate.month);
+              if (paidBy != null && isPersonal && paidBy != currentUserId) {
+                return;
+              }
+              if (monthKey != null) {
                 _ref.read(monthlyExpensesProvider(monthKey).notifier).deleteExpense(id);
               }
             } else {
               final expense = Expense.fromMap(doc);
-              final expenseDate = expense.expenseDate;
-              final monthKey = DateTime(expenseDate.year, expenseDate.month);
-              final notifier = _ref.read(monthlyExpensesProvider(monthKey).notifier);
+              final targetMonthKey = monthKey ?? DateTime(expense.expenseDate.year, expense.expenseDate.month);
+              final notifier = _ref.read(monthlyExpensesProvider(targetMonthKey).notifier);
               
               if (action.endsWith('.create')) {
                 notifier.addExpense(expense);
@@ -99,9 +134,6 @@ class RealtimeService {
             }
           } catch (e) {
             debugPrint('Failed to process realtime expense event: $e');
-            _ref.invalidate(monthlyExpensesProvider);
-            _ref.invalidate(userSplitsProvider);
-            _ref.invalidate(userCashFlowProvider);
           }
         }
 
@@ -109,14 +141,23 @@ class RealtimeService {
         if (event.channels.any((c) => c.contains(AppConstants.settlementsCollection))) {
           try {
             final groupId = doc['groupId'] as String?;
+            final currentUserId = _ref.read(authStateProvider).valueOrNull?.id;
+            if (currentUserId == null) return;
+
             if (groupId != null && groupId.isNotEmpty) {
+              final userGroups = _ref.read(userGroupsProvider).valueOrNull;
+              if (userGroups != null && !userGroups.any((g) => g.id == groupId)) {
+                return;
+              }
               _ref.invalidate(groupLedgerProvider(groupId));
               _ref.invalidate(groupBalancesProvider(groupId));
               _ref.invalidate(groupAllExpensesProvider(groupId));
             }
-            _ref.invalidate(monthlyExpensesProvider);
+            final now = DateTime.now();
+            final currentMonthKey = DateTime(now.year, now.month);
+            _ref.invalidate(monthlyExpensesProvider(currentMonthKey));
             _ref.invalidate(userSplitsProvider);
-            _ref.invalidate(userCashFlowProvider);
+            _ref.invalidate(userCashFlowProvider(currentMonthKey));
             debugPrint('Realtime settlement processed. Invalidate all balances and expense views.');
           } catch (e) {
             debugPrint('Failed to process realtime settlement event: $e');
@@ -130,8 +171,11 @@ class RealtimeService {
             if (expenseId != null && expenseId.isNotEmpty) {
               _ref.invalidate(expenseSplitsProvider(expenseId));
             }
+            final now = DateTime.now();
+            final currentMonthKey = DateTime(now.year, now.month);
             _ref.invalidate(userSplitsProvider);
-            _ref.invalidate(monthlyExpensesProvider);
+            _ref.invalidate(monthlyExpensesProvider(currentMonthKey));
+            _ref.invalidate(userCashFlowProvider(currentMonthKey));
           } catch (e) {
             debugPrint('Failed to process realtime split event: $e');
           }
@@ -149,7 +193,7 @@ class RealtimeService {
           try {
             final notification = NotificationModel.fromMap(doc);
             final currentUserId = _ref.read(authStateProvider).valueOrNull?.id;
-            if (currentUserId != null && notification.userId != currentUserId) {
+            if (currentUserId == null || notification.userId != currentUserId) {
               // Notification is for another user, ignore
               return;
             }
@@ -173,8 +217,30 @@ class RealtimeService {
           try {
             final id = doc['\$id'] as String? ?? doc['id'] as String? ?? '';
             final groupId = doc['groupId'] as String?;
+            final createdBy = doc['createdBy'] as String? ?? doc['userId'] as String?;
+            final currentUserId = _ref.read(authStateProvider).valueOrNull?.id;
+            final isPersonal = groupId == null || groupId.isEmpty || groupId == 'personal';
+
+            if (currentUserId == null) return;
+
+            // If personal item created by another user, ignore!
+            if (isPersonal && createdBy != null && createdBy != currentUserId) {
+              return;
+            }
+
+            // If group item and current user is not a member of the group, ignore!
+            if (!isPersonal && groupId.isNotEmpty) {
+              final userGroups = _ref.read(userGroupsProvider).valueOrNull;
+              if (userGroups != null && !userGroups.any((g) => g.id == groupId)) {
+                return;
+              }
+            }
+
             final cacheService = _ref.read(cacheServiceProvider);
             final cached = cacheService.getCachedShoppingItems();
+
+            final cachedItem = cached.where((i) => i.id == id).firstOrNull;
+            final effectiveGroupId = (doc['groupId'] as String?) ?? cachedItem?.groupId;
 
             if (action.endsWith('.delete')) {
               final updated = cached.where((i) => i.id != id).toList();
@@ -193,8 +259,8 @@ class RealtimeService {
 
             _ref.invalidate(allUserItemsProvider);
             _ref.invalidate(personalItemsProvider);
-            if (groupId != null && groupId.isNotEmpty && groupId != 'personal') {
-              _ref.invalidate(groupItemsProvider(groupId));
+            if (effectiveGroupId != null && effectiveGroupId.isNotEmpty && effectiveGroupId != 'personal') {
+              _ref.invalidate(groupItemsProvider(effectiveGroupId));
             }
           } catch (e) {
             debugPrint('Failed to process realtime list item event: $e');
@@ -202,7 +268,9 @@ class RealtimeService {
             _ref.invalidate(personalItemsProvider);
           }
         }
-      });
+      }, onError: (error) {
+        debugPrint('Appwrite Realtime stream error: $error');
+      }, cancelOnError: false);
       debugPrint('Started listening to Appwrite Realtime on all collections.');
     } catch (e) {
       debugPrint('Realtime subscription error: $e');

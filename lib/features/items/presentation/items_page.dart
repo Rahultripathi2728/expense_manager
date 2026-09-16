@@ -12,6 +12,8 @@ import '../../expenses/presentation/add_expense/add_expense_screen.dart';
 import '../../expenses/presentation/add_expense/providers/add_expense_provider.dart';
 import '../../../../shared/services/categorize_service.dart';
 
+final selectedItemGroupTabProvider = StateProvider<String>((ref) => 'all');
+
 class ItemsPage extends ConsumerStatefulWidget {
   const ItemsPage({super.key});
 
@@ -23,6 +25,12 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
   // 'all', 'personal', or groupId
   String _selectedTab = 'all';
   final Set<String> _selectedItemIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = ref.read(selectedItemGroupTabProvider);
+  }
 
   void _toggleItemSelection(String id) {
     HapticHelper.selectionClick();
@@ -359,6 +367,15 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String>(selectedItemGroupTabProvider, (_, next) {
+      if (mounted && _selectedTab != next) {
+        setState(() {
+          _selectedTab = next;
+          _selectedItemIds.clear();
+        });
+      }
+    });
+
     final groupsAsync = ref.watch(userGroupsProvider);
     final currentUser = ref.watch(authStateProvider).valueOrNull;
 
@@ -382,25 +399,6 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
                 setState(() => _selectedItemIds.clear());
               },
               child: const Text('Clear', style: TextStyle(fontWeight: FontWeight.bold)),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  onPressed: () {
-                    final groups = groupsAsync.valueOrNull ?? [];
-                    _showAddOptionsModal(context, groups);
-                  },
-                  icon: const Icon(Icons.add_rounded, size: 22, color: Colors.white),
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(),
-                ),
-              ),
             ),
         ],
       ),
@@ -584,6 +582,7 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
     return GestureDetector(
       onTap: () {
         HapticHelper.selectionClick();
+        ref.read(selectedItemGroupTabProvider.notifier).state = key;
         setState(() {
           _selectedTab = key;
           _selectedItemIds.clear();

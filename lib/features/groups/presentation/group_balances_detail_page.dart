@@ -1300,23 +1300,30 @@ class _HisaabArithmeticCards extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: AppColors.primary,
-                        child: Text(
-                          m.fullName.isNotEmpty ? m.fullName[0].toUpperCase() : 'U',
-                          style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: AppColors.primary,
+                          child: Text(
+                            m.fullName.isNotEmpty ? m.fullName[0].toUpperCase() : 'U',
+                            style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        isMe ? '${m.fullName} (You)' : m.fullName,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isMe ? '${m.fullName} (You)' : m.fullName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                     decoration: BoxDecoration(
@@ -1497,7 +1504,7 @@ class _HisaabArithmeticCards extends StatelessWidget {
   ) {
     if (paidSets.isNotEmpty && recSets.isEmpty) {
       if (paidSets.length == 1) {
-        final toName = data.profiles[paidSets.first.toUserId]?.fullName ?? 'Member';
+        final toName = data.profiles[paidSets.first.toUserId]?.fullName.split(' ').first ?? 'Member';
         final dateStr = DateHelpers.formatDayMonth(paidSets.first.createdAt);
         return 'Settled: Paid ${DateHelpers.formatCurrency(paidSets.first.amount)} to $toName on $dateStr';
       } else {
@@ -1505,7 +1512,7 @@ class _HisaabArithmeticCards extends StatelessWidget {
       }
     } else if (recSets.isNotEmpty && paidSets.isEmpty) {
       if (recSets.length == 1) {
-        final fromName = data.profiles[recSets.first.fromUserId]?.fullName ?? 'Member';
+        final fromName = data.profiles[recSets.first.fromUserId]?.fullName.split(' ').first ?? 'Member';
         final dateStr = DateHelpers.formatDayMonth(recSets.first.createdAt);
         return 'Settled: Received ${DateHelpers.formatCurrency(recSets.first.amount)} from $fromName on $dateStr';
       } else {
@@ -1642,8 +1649,8 @@ class _HisaabFinalConclusion extends StatelessWidget {
                 final tx = txs[idx];
                 final fromProfile = data.profiles[tx.fromUserId];
                 final toProfile = data.profiles[tx.toUserId];
-                final fromName = fromProfile?.fullName.trim().isNotEmpty == true ? fromProfile!.fullName : 'Member';
-                final toName = toProfile?.fullName.trim().isNotEmpty == true ? toProfile!.fullName : 'Member';
+                final fromName = fromProfile?.fullName.trim().isNotEmpty == true ? fromProfile!.fullName.split(' ').first : 'Member';
+                final toName = toProfile?.fullName.trim().isNotEmpty == true ? toProfile!.fullName.split(' ').first : 'Member';
 
                 final fromInitial = fromName.isNotEmpty ? fromName[0].toUpperCase() : 'P';
                 final toInitial = toName.isNotEmpty ? toName[0].toUpperCase() : 'R';

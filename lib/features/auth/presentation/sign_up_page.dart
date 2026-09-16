@@ -54,20 +54,26 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
       final username = _usernameCtrl.text.trim().toLowerCase();
       final email = _emailCtrl.text.trim();
       
-      // Check if username is taken
-      final tablesDB = ref.read(appwriteTablesDBProvider);
-      final res = await tablesDB.listRows(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.profilesCollection,
-        queries: [Query.equal('username', username)],
-      );
-      
-      if (res.rows.isNotEmpty) {
-        setState(() {
-          _error = 'Username is already taken. Please choose another.';
-          _loading = false;
-        });
-        return;
+      // Check if username is taken (if supported by collection schema)
+      try {
+        final tablesDB = ref.read(appwriteTablesDBProvider);
+        final res = await tablesDB.listRows(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.profilesCollection,
+          queries: [Query.equal('username', username)],
+        );
+        
+        if (res.rows.isNotEmpty) {
+          setState(() {
+            _error = 'Username "$username" is already taken. Please choose another.';
+            _loading = false;
+          });
+          return;
+        }
+      } catch (e) {
+        // If profiles collection schema doesn't have a username attribute or guest lacks permissions,
+        // log and proceed to account creation so signup is not blocked.
+        debugPrint('Pre-registration username check skipped: $e');
       }
 
       final uid = await ref
@@ -262,24 +268,58 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                                         borderRadius: BorderRadius.circular(
                                           AppSpacing.radiusMd,
                                         ),
+                                        border: Border.all(
+                                          color: AppColors.error.withValues(alpha: 0.3),
+                                          width: 1,
+                                        ),
                                       ),
-                                      child: Row(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Icon(
-                                            Icons.error_outline,
-                                            color: AppColors.error,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: AppSpacing.sm),
-                                          Expanded(
-                                            child: Text(
-                                              _error!,
-                                              style: TextStyle(
+                                          Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(
+                                                Icons.error_outline,
                                                 color: AppColors.error,
-                                                fontSize: 12,
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: AppSpacing.sm),
+                                              Expanded(
+                                                child: Text(
+                                                  _error!,
+                                                  style: TextStyle(
+                                                    color: AppColors.error,
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w500,
+                                                    height: 1.3,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          if (_error!.contains('already exists')) ...[
+                                            const SizedBox(height: 8),
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: TextButton.icon(
+                                                onPressed: () => context.go('/sign-in'),
+                                                icon: const Icon(Icons.login_rounded, size: 16),
+                                                label: const Text('Go to Sign In'),
+                                                style: TextButton.styleFrom(
+                                                  foregroundColor: AppColors.primary,
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 4,
+                                                  ),
+                                                  textStyle: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                          ),
+                                          ],
                                         ],
                                       ),
                                     ),
@@ -361,11 +401,14 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                                       ),
                                     ),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty) {
+                                      if (v == null || v.trim().isEmpty) {
                                         return 'Email is required';
                                       }
-                                      if (!v.contains('@')) {
-                                        return 'Enter a valid email';
+                                      final emailRegex = RegExp(
+                                        r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+                                      );
+                                      if (!emailRegex.hasMatch(v.trim())) {
+                                        return 'Enter a valid email address (e.g. name@example.com)';
                                       }
                                       return null;
                                     },
@@ -406,7 +449,9 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                                       if (v == null || v.isEmpty) {
                                         return 'Password is required';
                                       }
-                                      if (v.length < 6) return 'Minimum 6 characters';
+                                      if (v.length < AppConstants.minPasswordLength) {
+                                        return 'Password must be at least ${AppConstants.minPasswordLength} characters';
+                                      }
                                       return null;
                                     },
                                   ),

@@ -43,6 +43,6 @@ class AppConstants {
   static const int joinCodeLength = 6;
 
   // ── Validation ──
-  static const int minPasswordLength = 6;
+  static const int minPasswordLength = 8;
   static const double splitEpsilon = 0.01;
 }

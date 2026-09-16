@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -91,7 +92,7 @@ class _PaymentSummaryPageState extends ConsumerState<PaymentSummaryPage> {
 
       final expenseIds = expenseList.map((e) => e.id).toList();
 
-      await repo.settleBalancesLocalFallback(
+      final settlementId = await repo.settleBalancesLocalFallback(
         widget.groupId,
         tx.fromUserId,
         tx.toUserId,
@@ -104,8 +105,11 @@ class _PaymentSummaryPageState extends ConsumerState<PaymentSummaryPage> {
       final payerName = currentUser?.name.isNotEmpty == true ? currentUser!.name : 'Group Member';
       _notifySettlement(
         groupId: widget.groupId,
+        settlementId: settlementId,
+        fromUserId: tx.fromUserId,
         payerName: payerName,
         recipientUserId: tx.toUserId,
+        recipientName: recipientName,
         amount: tx.amount,
       );
 
@@ -170,7 +174,7 @@ class _PaymentSummaryPageState extends ConsumerState<PaymentSummaryPage> {
       for (final tx in txToProcess) {
         final expenseIds = expenseList.map((e) => e.id).toList();
 
-        await repo.settleBalancesLocalFallback(
+        final settlementId = await repo.settleBalancesLocalFallback(
           widget.groupId,
           tx.fromUserId,
           tx.toUserId,
@@ -180,8 +184,11 @@ class _PaymentSummaryPageState extends ConsumerState<PaymentSummaryPage> {
 
         _notifySettlement(
           groupId: widget.groupId,
+          settlementId: settlementId,
+          fromUserId: tx.fromUserId,
           payerName: payerName,
           recipientUserId: tx.toUserId,
+          recipientName: profiles[tx.toUserId]?.fullName ?? 'Member',
           amount: tx.amount,
         );
       }
@@ -214,25 +221,103 @@ class _PaymentSummaryPageState extends ConsumerState<PaymentSummaryPage> {
 
   Future<void> _notifySettlement({
     required String groupId,
+    String? settlementId,
+    required String fromUserId,
     required String payerName,
     required String recipientUserId,
+    required String recipientName,
     required double amount,
   }) async {
     try {
+      final currentUser = ref.read(authStateProvider).valueOrNull;
       final tablesDB = ref.read(appwriteTablesDBProvider);
-      await tablesDB.createRow(
-        databaseId: AppConstants.databaseId,
-        tableId: AppConstants.notificationsCollection,
-        rowId: ID.unique(),
-        data: {
-          'userId': recipientUserId,
-          'title': '💰 Payment Received & Settled',
-          'body': '$payerName marked ₹${amount.toStringAsFixed(0)} as paid and settled with you.',
+      final notifPayload = jsonEncode({
+        'groupId': groupId,
+        'settlementId': settlementId,
+        'fromUserId': fromUserId,
+        'toUserId': recipientUserId,
+        'amount': amount,
+      });
+
+      // 1. Recipient notification
+      final recipientNotif = {
+        'userId': recipientUserId,
+        'title': '💰 Payment Received & Settled',
+        'body': '$payerName marked ₹${amount.toStringAsFixed(0)} as paid and settled with you.',
+        'type': 'settled',
+        'isRead': false,
+        'createdAt': DateTime.now().toIso8601String(),
+        'payload': notifPayload,
+      };
+      try {
+        await tablesDB.createRow(
+          databaseId: AppConstants.databaseId,
+          tableId: AppConstants.notificationsCollection,
+          rowId: ID.unique(),
+          data: recipientNotif,
+          permissions: [
+            Permission.read(Role.users()),
+            Permission.update(Role.users()),
+            Permission.delete(Role.users()),
+          ],
+        );
+      } catch (e) {
+        if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+          recipientNotif.remove('payload');
+          await tablesDB.createRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.notificationsCollection,
+            rowId: ID.unique(),
+            data: recipientNotif,
+            permissions: [
+              Permission.read(Role.users()),
+              Permission.update(Role.users()),
+              Permission.delete(Role.users()),
+            ],
+          );
+        }
+      }
+
+      // 2. Payer notification
+      if (currentUser != null) {
+        final payerNotif = {
+          'userId': currentUser.id,
+          'title': '✅ Payment Settled',
+          'body': 'You marked ₹${amount.toStringAsFixed(0)} as paid and settled with $recipientName.',
           'type': 'settled',
           'isRead': false,
           'createdAt': DateTime.now().toIso8601String(),
-        },
-      );
+          'payload': notifPayload,
+        };
+        try {
+          await tablesDB.createRow(
+            databaseId: AppConstants.databaseId,
+            tableId: AppConstants.notificationsCollection,
+            rowId: ID.unique(),
+            data: payerNotif,
+            permissions: [
+              Permission.read(Role.users()),
+              Permission.update(Role.users()),
+              Permission.delete(Role.users()),
+            ],
+          );
+        } catch (e) {
+          if (e.toString().contains('payload') || e.toString().contains('attribute')) {
+            payerNotif.remove('payload');
+            await tablesDB.createRow(
+              databaseId: AppConstants.databaseId,
+              tableId: AppConstants.notificationsCollection,
+              rowId: ID.unique(),
+              data: payerNotif,
+              permissions: [
+                Permission.read(Role.users()),
+                Permission.update(Role.users()),
+                Permission.delete(Role.users()),
+              ],
+            );
+          }
+        }
+      }
     } catch (_) {}
   }
 

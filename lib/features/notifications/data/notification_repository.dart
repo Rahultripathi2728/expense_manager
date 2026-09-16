@@ -83,6 +83,8 @@ class NotificationsNotifier extends AsyncNotifier<List<NotificationModel>> {
       final list = state.value!;
       if (list.any((n) => n.id == notification.id)) return;
       state = AsyncValue.data([notification, ...list]);
+    } else {
+      ref.invalidateSelf();
     }
   }
 
@@ -93,6 +95,8 @@ class NotificationsNotifier extends AsyncNotifier<List<NotificationModel>> {
         for (final n in list)
           if (n.id == notification.id) notification else n
       ]);
+    } else {
+      ref.invalidateSelf();
     }
   }
 
@@ -102,6 +106,8 @@ class NotificationsNotifier extends AsyncNotifier<List<NotificationModel>> {
       state = AsyncValue.data(
         list.where((n) => n.id != id).toList()
       );
+    } else {
+      ref.invalidateSelf();
     }
   }
 

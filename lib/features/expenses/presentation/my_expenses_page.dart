@@ -229,10 +229,21 @@ class _MyExpensesTab extends ConsumerWidget {
     final expenseItems = itemsAsync.valueOrNull ?? [];
     final myUserId = currentUser?.id;
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Column(
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: () async {
+        ref.invalidate(monthlyExpensesProvider(month));
+        ref.invalidate(userCashFlowProvider(month));
+        ref.invalidate(monthlyExpenseItemsProvider(month));
+        ref.invalidate(userSplitsProvider);
+        ref.invalidate(currentProfileProvider);
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Date selection row
@@ -936,15 +947,17 @@ class _MyExpensesTab extends ConsumerWidget {
                               ),
                               const SizedBox(width: 10),
 
-                              // Net Cash Flow (Personal + My Share)
+                              // Net Cash Flow (Total Inflow - Total Outflow)
                               Expanded(
                                 child: _buildMetricCard(
                                   title: 'NET CASH FLOW',
                                   amount: cashFlow.netCashFlow,
-                                  color: const Color(0xFF10B981),
+                                  color: cashFlow.netCashFlow >= 0
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFEF4444),
                                   icon: Icons.account_balance_wallet_rounded,
                                   isSelected: activeCashFlowFilter == 'all',
-                                  isNet: false,
+                                  isNet: true,
                                   onTap: () {
                                     HapticHelper.selectionClick();
                                     ref.read(cashFlowFilterTabProvider.notifier).state = 'all';
@@ -1057,8 +1070,9 @@ class _MyExpensesTab extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   String _formatDayHeader(DateTime date) {
     if (DateHelpers.isToday(date)) {

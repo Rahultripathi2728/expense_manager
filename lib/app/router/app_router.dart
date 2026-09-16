@@ -232,15 +232,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/expense-detail',
         builder: (_, state) {
           final expense = state.extra;
-          if (expense is! Expense) {
-            // Redirect to a safe page if navigated without proper data
-            return const Scaffold(
-              body: Center(
-                child: Text('Expense data not found. Please go back.'),
-              ),
-            );
+          if (expense is Expense) {
+            return ExpenseDetailPage(expense: expense);
           }
-          return ExpenseDetailPage(expense: expense);
+          final expenseId = state.extra is String
+              ? (state.extra as String)
+              : state.uri.queryParameters['id'];
+          if (expenseId != null && expenseId.isNotEmpty) {
+            return ExpenseDetailLoaderPage(expenseId: expenseId);
+          }
+          return const Scaffold(
+            body: Center(
+              child: Text('Expense data not found. Please go back.'),
+            ),
+          );
         },
       ),
       GoRoute(
@@ -274,10 +279,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settlement-history-detail',
         builder: (_, state) {
           final args = state.extra as Map<String, dynamic>? ?? {};
-          return SettlementHistoryDetailPage(
-            settlement: args['settlement'] as Settlement,
-            fromName: args['fromName'] as String? ?? '',
-            toName: args['toName'] as String? ?? '',
+          if (args['settlement'] is Settlement) {
+            return SettlementHistoryDetailPage(
+              settlement: args['settlement'] as Settlement,
+              fromName: args['fromName'] as String? ?? '',
+              toName: args['toName'] as String? ?? '',
+            );
+          }
+          final settlementId = (args['settlementId'] as String?) ??
+              (state.extra is String ? state.extra as String : null) ??
+              state.uri.queryParameters['id'];
+          if (settlementId != null && settlementId.isNotEmpty) {
+            return SettlementHistoryDetailLoaderPage(
+              settlementId: settlementId,
+              fromName: args['fromName'] as String?,
+              toName: args['toName'] as String?,
+            );
+          }
+          return const Scaffold(
+            body: Center(
+              child: Text('Settlement data not found. Please go back.'),
+            ),
           );
         },
       ),
