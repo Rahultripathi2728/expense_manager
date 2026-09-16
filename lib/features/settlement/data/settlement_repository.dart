@@ -9,6 +9,7 @@ import '../../../app/constants/app_constants.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../expenses/data/expense_repository.dart';
 import '../../groups/data/group_repository.dart';
+import '../../groups/domain/group_model.dart';
 import '../../profile/domain/profile_model.dart';
 import '../../expenses/domain/expense_model.dart';
 import '../../expenses/domain/expense_split_model.dart';
@@ -128,6 +129,10 @@ class SettlementRepository {
     final connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult.contains(ConnectivityResult.none)) {
       throw Exception('Settling balances requires an active internet connection.');
+    }
+
+    if (amount <= 0.0) {
+      throw Exception('Settlement amount must be greater than zero.');
     }
 
     // ── 1. Idempotency & Deduplication Guard ──
@@ -255,15 +260,19 @@ class SettlementRepository {
             calcResult.netBalances.isNotEmpty &&
             calcResult.netBalances.values.every((b) => b.abs() < 0.05)) {
           for (final exp in activeExpenses) {
-            await _tablesDB.updateRow(
-              databaseId: AppConstants.databaseId,
-              tableId: AppConstants.expensesCollection,
-              rowId: exp.id,
-              data: {
-                'isSettled': true,
-                'settledAt': DateTime.now().toIso8601String(),
-              },
-            );
+            try {
+              await _tablesDB.updateRow(
+                databaseId: AppConstants.databaseId,
+                tableId: AppConstants.expensesCollection,
+                rowId: exp.id,
+                data: {
+                  'isSettled': true,
+                  'settledAt': DateTime.now().toIso8601String(),
+                },
+              );
+            } catch (e) {
+              debugPrint('Expense ${exp.id} mark settled permission/network notice: $e');
+            }
           }
         }
       }
@@ -293,12 +302,18 @@ class SettlementRepository {
       final resPaid = await _tablesDB.listRows(
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.settlementsCollection,
-        queries: [Query.equal('fromUserId', userId), Query.orderDesc('createdAt')],
+        queries: [
+          Query.equal('fromUserId', userId),
+          Query.limit(100),
+        ],
       );
       final resReceived = await _tablesDB.listRows(
         databaseId: AppConstants.databaseId,
         tableId: AppConstants.settlementsCollection,
-        queries: [Query.equal('toUserId', userId), Query.orderDesc('createdAt')],
+        queries: [
+          Query.equal('toUserId', userId),
+          Query.limit(100),
+        ],
       );
 
       final Map<String, Settlement> all = {};
@@ -312,7 +327,8 @@ class SettlementRepository {
       final list = all.values.toList();
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return list;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('getUserSettlements error: $e');
       return [];
     }
   }
@@ -355,16 +371,18 @@ final userCashFlowProvider = FutureProvider.family<CashFlowSummaryData, DateTime
   final settlementsRepo = ref.watch(settlementRepositoryProvider);
   final tablesDB = ref.watch(appwriteTablesDBProvider);
 
-  // 1. Fetch monthly expenses
+  // 1. Fetch monthly expenses safely
   final List<Expense> expenses = monthlyExpensesAsync.valueOrNull ??
-      await ref.watch(monthlyExpensesProvider(month).future);
+      await ref.read(monthlyExpensesProvider(month).future);
 
-  // 2. Splits
-  final userSplits = userSplitsAsync.valueOrNull ?? [];
+  // 2. Splits safely
+  final List<ExpenseSplit> userSplits = userSplitsAsync.valueOrNull ??
+      await ref.read(userSplitsProvider.future);
   final splitMap = {for (var s in userSplits) s.expenseId: s.amountOwed};
 
-  // 3. Groups
-  final groups = userGroupsAsync.valueOrNull ?? [];
+  // 3. Groups safely
+  final List<Group> groups = userGroupsAsync.valueOrNull ??
+      await ref.read(userGroupsProvider.future);
   final groupMap = {for (var g in groups) g.id: g.name};
 
   // 4. Fetch user settlements

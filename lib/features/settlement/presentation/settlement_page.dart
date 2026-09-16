@@ -104,6 +104,12 @@ class GroupBalanceData {
   ExpenseSettlementStatus getExpenseSettlementStatus(Expense expense) {
     if (expense.isSettled) return ExpenseSettlementStatus.fullySettled;
 
+    // If all simplified debts in the group are cleared and settlements exist,
+    // all expenses in this cycle are fully settled.
+    if (transactions.isEmpty && settlements.isNotEmpty) {
+      return ExpenseSettlementStatus.fullySettled;
+    }
+
     final splits = splitsByExpense[expense.id] ?? [];
     final debtorIds = splits
         .where((s) => s.userId != expense.userId && s.isIncluded)
@@ -123,7 +129,11 @@ class GroupBalanceData {
     }
 
     final settledDebtorIds = settlementsForExp.map((s) => s.fromUserId).toSet();
-    final allSettled = debtorIds.every(settledDebtorIds.contains);
+    final allSettled = debtorIds.every((dId) {
+      if (settledDebtorIds.contains(dId)) return true;
+      final owesPayer = transactions.any((t) => t.fromUserId == dId && t.toUserId == expense.userId);
+      return !owesPayer && settlementsForExp.isNotEmpty;
+    });
 
     if (allSettled) {
       return ExpenseSettlementStatus.fullySettled;

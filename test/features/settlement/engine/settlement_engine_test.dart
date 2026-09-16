@@ -251,5 +251,107 @@ void main() {
       expect(ledgerPhase2.getSettledDebtorsCount(bill), 2);
       expect(ledgerPhase2.getTotalDebtorsCount(bill), 2);
     });
+
+    test('Flat Scenario: Abhimanyu pays Aata, Aman pays Mutton - Rahul settles all debts -> both bills fully settled', () {
+      const abhimanyuId = 'user_abhimanyu';
+      const amanId = 'user_aman';
+      const rahulId = 'user_rahul';
+      final members = [abhimanyuId, amanId, rahulId];
+
+      final aataExp = Expense(
+        id: 'exp_aata_300',
+        userId: abhimanyuId,
+        groupId: 'flat_group',
+        amount: 300.0,
+        category: 'Food',
+        description: 'Aata',
+        expenseDate: DateTime.now(),
+        expenseType: 'group',
+        createdAt: DateTime.now(),
+        splitType: 'equal',
+        isSettled: false,
+      );
+
+      final muttonExp = Expense(
+        id: 'exp_mutton_300',
+        userId: amanId,
+        groupId: 'flat_group',
+        amount: 300.0,
+        category: 'Food',
+        description: 'Mutton',
+        expenseDate: DateTime.now(),
+        expenseType: 'group',
+        createdAt: DateTime.now(),
+        splitType: 'equal',
+        isSettled: false,
+      );
+
+      final splits = [
+        // Aata splits (100 each)
+        const ExpenseSplit(id: 's1', expenseId: 'exp_aata_300', userId: abhimanyuId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's2', expenseId: 'exp_aata_300', userId: amanId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's3', expenseId: 'exp_aata_300', userId: rahulId, amountOwed: 100.0, isIncluded: true),
+        // Mutton splits (100 each)
+        const ExpenseSplit(id: 's4', expenseId: 'exp_mutton_300', userId: amanId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's5', expenseId: 'exp_mutton_300', userId: abhimanyuId, amountOwed: 100.0, isIncluded: true),
+        const ExpenseSplit(id: 's6', expenseId: 'exp_mutton_300', userId: rahulId, amountOwed: 100.0, isIncluded: true),
+      ];
+
+      // Phase 1: Unsettled
+      final ledgerPhase1 = SettlementEngine.computeLedger(
+        memberUserIds: members,
+        expenses: [aataExp, muttonExp],
+        allSplits: splits,
+        settlements: [],
+      );
+
+      expect(ledgerPhase1.transactions.length, 2);
+      expect(ledgerPhase1.getMemberNet(abhimanyuId), 100.0);
+      expect(ledgerPhase1.getMemberNet(amanId), 100.0);
+      expect(ledgerPhase1.getMemberNet(rahulId), -200.0);
+      expect(ledgerPhase1.isExpenseFullySettled(aataExp), isFalse);
+      expect(ledgerPhase1.isExpenseFullySettled(muttonExp), isFalse);
+
+      // Phase 2: Rahul settles both simplified transactions
+      final setRahulToAbhimanyu = Settlement(
+        id: 'set_1',
+        groupId: 'flat_group',
+        fromUserId: rahulId,
+        toUserId: abhimanyuId,
+        amount: 100.0,
+        createdAt: DateTime.now(),
+        settledExpenseIds: ['exp_aata_300'],
+      );
+
+      final setRahulToAman = Settlement(
+        id: 'set_2',
+        groupId: 'flat_group',
+        fromUserId: rahulId,
+        toUserId: amanId,
+        amount: 100.0,
+        createdAt: DateTime.now(),
+        settledExpenseIds: ['exp_mutton_300'],
+      );
+
+      final ledgerPhase2 = SettlementEngine.computeLedger(
+        memberUserIds: members,
+        expenses: [aataExp, muttonExp],
+        allSplits: splits,
+        settlements: [setRahulToAbhimanyu, setRahulToAman],
+      );
+
+      // All transactions cleared
+      expect(ledgerPhase2.transactions.isEmpty, isTrue, reason: 'All simplified transactions must be cleared');
+      expect(ledgerPhase2.getMemberNet(abhimanyuId), 0.0);
+      expect(ledgerPhase2.getMemberNet(amanId), 0.0);
+      expect(ledgerPhase2.getMemberNet(rahulId), 0.0);
+
+      // Both bills must now be fully settled and NOT stuck in partially settled
+      expect(ledgerPhase2.isExpenseFullySettled(aataExp), isTrue, reason: 'Aata must be fully settled');
+      expect(ledgerPhase2.isExpenseFullySettled(muttonExp), isTrue, reason: 'Mutton must be fully settled');
+      expect(ledgerPhase2.isExpensePartiallySettled(aataExp), isFalse);
+      expect(ledgerPhase2.isExpensePartiallySettled(muttonExp), isFalse);
+      expect(ledgerPhase2.unsettledExpensesCount, 0, reason: 'Unsettled count must reset to 0');
+    });
   });
 }

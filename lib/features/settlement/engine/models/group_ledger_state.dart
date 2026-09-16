@@ -62,19 +62,32 @@ class GroupLedgerState {
 
   // ── Helper Getters & Domain Rules ──
 
-  int get unsettledExpensesCount => unsettledExpenses.length;
+  int get unsettledExpensesCount {
+    if (transactions.isEmpty && settlements.isNotEmpty) return 0;
+    return unsettledExpenses.length;
+  }
 
-  double get totalUnsettledAmount => unsettledExpenses.fold<double>(
-        0.0,
-        (sum, e) => sum + e.amount,
-      );
+  double get totalUnsettledAmount {
+    if (transactions.isEmpty && settlements.isNotEmpty) return 0.0;
+    return unsettledExpenses.fold<double>(
+      0.0,
+      (sum, e) => sum + e.amount,
+    );
+  }
 
   /// Returns the settlement status for an expense:
-  /// - fullySettled: marked settled in DB or ALL included debtors have recorded settlements.
+  /// - fullySettled: marked settled in DB or ALL included debtors have recorded settlements,
+  ///   or the group cycle is all settled up (transactions are empty).
   /// - partiallySettled: at least 1 debtor has recorded a settlement, but other debtors remain pending.
   /// - unsettled: no debtors have settled.
   ExpenseSettlementStatus getExpenseSettlementStatus(Expense expense) {
     if (expense.isSettled) return ExpenseSettlementStatus.fullySettled;
+
+    // If all simplified debts in the group are cleared and settlements exist,
+    // all expenses in this cycle are fully settled.
+    if (transactions.isEmpty && settlements.isNotEmpty) {
+      return ExpenseSettlementStatus.fullySettled;
+    }
 
     final splits = splitsByExpense[expense.id] ?? [];
     final debtorIds = splits
@@ -95,7 +108,11 @@ class GroupLedgerState {
     }
 
     final settledDebtorIds = settlementsForExp.map((s) => s.fromUserId).toSet();
-    final allSettled = debtorIds.every(settledDebtorIds.contains);
+    final allSettled = debtorIds.every((dId) {
+      if (settledDebtorIds.contains(dId)) return true;
+      final owesPayer = transactions.any((t) => t.fromUserId == dId && t.toUserId == expense.userId);
+      return !owesPayer && settlementsForExp.isNotEmpty;
+    });
 
     if (allSettled) {
       return ExpenseSettlementStatus.fullySettled;

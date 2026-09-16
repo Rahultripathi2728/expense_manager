@@ -42,17 +42,25 @@ class PushNotificationService {
     _isInitialized = true;
 
     // 1. Request notification permission
-    final notificationSettings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    try {
+      final notificationSettings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint('Push notification permission status: ${notificationSettings.authorizationStatus}');
+    } catch (e) {
+      debugPrint('Error requesting push permission: $e');
+    }
 
-    if (notificationSettings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('User granted push notification permission');
-    } else {
-      debugPrint('User declined or has not accepted push notification permission');
-      return;
+    try {
+      await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (e) {
+      debugPrint('Error setting foreground notification presentation options: $e');
     }
 
     // 2. Initialize Local Notifications for Foreground display
@@ -65,12 +73,14 @@ class PushNotificationService {
       },
     );
 
-    // Create android notification channel
+    // Create android notification channel v2 with sound and vibration enabled
     const androidChannel = AndroidNotificationChannel(
-      'expense_manager_channel',
+      'expense_manager_channel_v2',
       'Split Pro Notifications',
       description: 'Used for expense and settlement updates.',
       importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
     );
 
     final androidPlugin = _localNotifications
@@ -125,6 +135,8 @@ class PushNotificationService {
             icon: 'launcher_icon',
             importance: Importance.max,
             priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
           ),
         ),
         payload: jsonEncode(message.data),
@@ -145,6 +157,15 @@ class PushNotificationService {
         _handleNotificationClick(message.data);
       }
     });
+
+    // 5. Listen for token refreshes to keep Appwrite Push Target synced
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      debugPrint('FCM Token refreshed: $newToken');
+      final user = _ref.read(authStateProvider).valueOrNull;
+      if (user != null) {
+        registerDeviceToken(user.id, force: true);
+      }
+    });
   }
 
   void _handleNotificationClick(Map<String, dynamic> data) {
@@ -156,7 +177,7 @@ class PushNotificationService {
   }
 
   /// Registers the device FCM token with Appwrite.
-  Future<void> registerDeviceToken(String userId) async {
+  Future<void> registerDeviceToken(String userId, {bool force = false}) async {
     if (kIsWeb) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
@@ -169,8 +190,8 @@ class PushNotificationService {
       final cachedToken = _prefs.getString(_pushDeviceTokenKey);
       final cachedTargetId = _prefs.getString(_pushTargetIdKey);
 
-      // If already registered with this exact token, skip
-      if (cachedToken == token && cachedTargetId != null) {
+      // If already registered with this exact token, skip only if not forced
+      if (!force && cachedToken == token && cachedTargetId != null) {
         debugPrint('Device token already registered with target ID: $cachedTargetId');
         return;
       }
@@ -194,6 +215,9 @@ class PushNotificationService {
       debugPrint('Successfully registered device token as Appwrite Push Target: $targetId');
     } catch (e) {
       debugPrint('Error registering device token to Appwrite: $e');
+      // If registration failed, remove cache so next launch retries cleanly
+      await _prefs.remove(_pushTargetIdKey);
+      await _prefs.remove(_pushDeviceTokenKey);
     }
   }
 
@@ -223,18 +247,10 @@ final pushNotificationServiceProvider = Provider<PushNotificationService>((ref) 
 final pushNotificationInitProvider = Provider<void>((ref) {
   final pushService = ref.watch(pushNotificationServiceProvider);
 
-  // Initialize listeners
+  // Initialize listeners & channels
   pushService.initialize();
 
-  // Check initial state
-  final authState = ref.read(authStateProvider);
-  authState.whenData((user) {
-    if (user != null) {
-      pushService.registerDeviceToken(user.id);
-    }
-  });
-
-  // Listen for changes (login/logout)
+  // Listen for changes with fireImmediately: true so already logged-in users register immediately
   ref.listen(authStateProvider, (previous, next) {
     next.whenData((user) {
       if (user != null) {
@@ -243,5 +259,5 @@ final pushNotificationInitProvider = Provider<void>((ref) {
         pushService.unregisterDeviceToken();
       }
     });
-  });
+  }, fireImmediately: true);
 });

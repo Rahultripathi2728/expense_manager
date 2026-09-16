@@ -38,7 +38,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
 
     const androidChannel = AndroidNotificationChannel(
-      'expense_manager_channel',
+      'expense_manager_channel_v2',
       'Split Pro Notifications',
       description: 'Used for expense and settlement updates.',
       importance: Importance.max,
